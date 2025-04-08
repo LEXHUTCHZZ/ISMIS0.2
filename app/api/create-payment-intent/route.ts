@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: "2024-04-10",
-});// api chnaged to 2024-04-10 from 2022-11-15
+  apiVersion: "2025-02-24.acacia",
+});// api chan  ge to 2025-02-24.acacia
 
 export async function POST(req: Request) {
   console.log("API Route: STRIPE_SECRET_KEY starts with:", process.env.STRIPE_SECRET_KEY?.substring(0, 8));
