@@ -1,12 +1,17 @@
 "use client";
 
 import { useState, useEffect } from "react";
-// After (correct)
-import { auth, db } from '@/lib/firebase';
+import { auth, db } from "@/lib/firebase";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+
+// Define the UserData interface for type safety
+interface UserData {
+  name: string;
+  role: "student" | "teacher" | "admin" | "accountsadmin";
+}
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -14,24 +19,23 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher" | "admin" | "accountsadmin">("student");
   const [error, setError] = useState("");
-  const [showForm, setShowForm] = useState(false); // State to control form animation
-  const [showVideo, setShowVideo] = useState(true); // State to control video visibility
+  const [showForm, setShowForm] = useState(false);
+  const [showVideo, setShowVideo] = useState(true);
   const router = useRouter();
 
   // Show the login form and remove the video after exactly 60 seconds
   useEffect(() => {
     const timeout = setTimeout(() => {
-      setShowVideo(false); // Remove the video
-      setShowForm(true); // Show the login form
-    }, 40000); // 60 seconds
+      setShowVideo(false);
+      setShowForm(true);
+    }, 60000); // Updated to 60 seconds
 
-    return () => clearTimeout(timeout); // Cleanup timeout on unmount
+    return () => clearTimeout(timeout);
   }, []);
 
-  // Handle skip button click
   const handleSkip = () => {
-    setShowVideo(false); // Remove the video
-    setShowForm(true); // Show the login form
+    setShowVideo(false);
+    setShowForm(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,32 +48,36 @@ export default function Login() {
     try {
       const { user } = await signInWithEmailAndPassword(auth, email, password);
       const userDoc = await getDoc(doc(db, "users", user.uid));
-      const userData = userDoc.data();
+      const userData = userDoc.data() as UserData | undefined;
 
-      if (userData?.name !== username || userData?.role !== role) {
+      if (!userDoc.exists() || userData?.name !== username || userData?.role !== role) {
         setError("Username or role does not match registered data");
         return;
       }
 
       router.push("/dashboard");
     } catch (err: any) {
-      setError(err.message || "Login failed");
+      const errorCode = err.code;
+      if (errorCode === "auth/invalid-credential") {
+        setError("Invalid email or password");
+      } else if (errorCode === "auth/user-not-found") {
+        setError("No account found with this email");
+      } else {
+        setError("Login failed. Please try again.");
+      }
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-gradient-to-br from-gray-900 to-black">
-      {/* Video Background (only shown if showVideo is true) */}
       {showVideo && (
         <video
           autoPlay
-          loop={false} // Do not loop
+          loop={false}
           className="absolute inset-0 w-full h-full object-cover z-0"
-          src="/background-video.mp4" // Path to your video in the public folder
+          src="/background-video.mp4"
         />
       )}
-
-      {/* Skip Button (shown only when the video is playing and the form is hidden) */}
       {!showForm && (
         <button
           onClick={handleSkip}
@@ -78,8 +86,6 @@ export default function Login() {
           Skip
         </button>
       )}
-
-      {/* Login Form Container */}
       <div
         className={`p-10 rounded-xl shadow-xl max-w-md w-full relative z-10 transition-all duration-700 transform backdrop-blur-md bg-black bg-opacity-30 ${
           showForm
