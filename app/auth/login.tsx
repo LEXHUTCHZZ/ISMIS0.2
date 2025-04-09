@@ -1,6 +1,7 @@
 // app/auth/login.tsx
 import { useState } from "react";
-import firebase from "../../lib/firebase";
+// After (correct)
+import { auth, db } from '@/lib/firebase';;
 
 export default function Login() {
   const [email, setEmail] = useState("");
