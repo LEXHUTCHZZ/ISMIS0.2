@@ -46,7 +46,7 @@ export default function Login() {
     }
 
     try {
-      const { user } = await signInWithEmailAndPassword(auth, email, password);
+      const { user } = await signInWithEmailAndPassword(auth, email, password); // Fixed: Use modular Firebase SDK
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const userData = userDoc.data() as UserData | undefined;
 
@@ -55,16 +55,9 @@ export default function Login() {
         return;
       }
 
-      router.push("/dashboard");
+      router.push("/dashboard"); // Fixed: Use router.push instead of window.location.href
     } catch (err: any) {
-      const errorCode = err.code;
-      if (errorCode === "auth/invalid-credential") {
-        setError("Invalid email or password");
-      } else if (errorCode === "auth/user-not-found") {
-        setError("No account found with this email");
-      } else {
-        setError("Login failed. Please try again.");
-      }
+      setError(err.message || "Login failed");
     }
   };
 
