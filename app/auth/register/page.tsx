@@ -113,7 +113,7 @@ export default function Register() {
             fee: COURSES[c].fee,
             subjects: COURSES[c].subjects.map((subject) => ({
               name: subject,
-              grades: { C1: "", C2: "", exam: "", final: "", status: "Pending" },
+              grades: { C1: "", C2: "", exam: "", final: "" }, // Removed status as it’s not in Subject type
             })),
           }));
 
