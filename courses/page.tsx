@@ -1,17 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db } from "../../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { useAuth } from "../../contexts/AuthContext";
-import { StudentData, Course, Subject, Transaction, Notification } from "../../types"; // Adjusted path
+import { useAuth } from "../contexts/AuthContext";
+import { StudentData, Course, Subject, Transaction, Notification } from "../types"; // Corrected path
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
-import CheckoutPage from "../../components/CheckoutPage";
-import { markNotificationAsRead } from "../../utils/utils";
+import CheckoutPage from "../components/CheckoutPage";
+import { markNotificationAsRead } from "../utils/utils";
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<any>(undefined);

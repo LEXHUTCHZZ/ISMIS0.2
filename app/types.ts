@@ -1,5 +1,3 @@
-// types.ts (at the root of your project)
-
 export interface User {
   id?: string;
   email: string;
