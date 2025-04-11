@@ -1,18 +1,22 @@
-// app/auth/register.tsx
+"use client";
+
 import { useState } from "react";
-import firebase from "../../lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { createUserWithEmailAndPassword } from "firebase/auth"; // Import the modular function
+import { useRouter } from "next/navigation"; // Import useRouter for navigation
 
 export default function Register() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const router = useRouter(); // Initialize useRouter
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await firebase.auth().createUserWithEmailAndPassword(email, password);
+      await createUserWithEmailAndPassword(auth, email, password); // Use modular Firebase SDK
       alert("Registration Successful");
-      window.location.href = "/dashboard";  // Redirect to dashboard on successful registration
+      router.push("/dashboard"); // Use router.push for navigation
     } catch (err: any) {
       setError(err.message);
     }

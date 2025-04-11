@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { auth, db } from "../../../lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
@@ -40,7 +40,7 @@ const COURSES = {
       "Oral Communication",
     ],
   },
-};
+} as const;
 
 const PAYMENT_PLANS = {
   full: { name: "Full Payment", installments: (total: number) => [{ amount: total, dueDate: new Date().toISOString(), paid: false }] },
@@ -59,7 +59,7 @@ const PAYMENT_PLANS = {
       { amount: total - 2 * Math.floor(total / 3), dueDate: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), paid: false },
     ],
   },
-};
+} as const;
 
 export default function Register() {
   const [email, setEmail] = useState("");
@@ -101,12 +101,12 @@ export default function Register() {
       console.log("User document written to Firestore");
 
       if (role === "student") {
-        const totalOwed = Object.keys(COURSES)
+        const totalOwed = (Object.keys(COURSES) as (keyof typeof COURSES)[])
           .filter((c) => selectedCourses.includes(c))
           .reduce((sum, c) => sum + COURSES[c].fee, 0);
         const installments = PAYMENT_PLANS[paymentPlan].installments(totalOwed);
 
-        const coursesWithSubjects = Object.keys(COURSES)
+        const coursesWithSubjects = (Object.keys(COURSES) as (keyof typeof COURSES)[])
           .filter((c) => selectedCourses.includes(c))
           .map((c) => ({
             name: c,
@@ -193,7 +193,7 @@ export default function Register() {
             <>
               <div>
                 <p className="text-red-900 mb-2">Select Courses:</p>
-                {Object.keys(COURSES).map((course) => (
+                {(Object.keys(COURSES) as (keyof typeof COURSES)[]).map((course) => (
                   <label key={course} className="flex items-center space-x-2">
                     <input
                       type="checkbox"

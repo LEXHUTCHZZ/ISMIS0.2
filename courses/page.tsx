@@ -1,4 +1,3 @@
-// app/dashboard/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -8,11 +7,11 @@ import { doc, getDoc, updateDoc, collection, getDocs, setDoc, addDoc } from "fir
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../contexts/AuthContext";
-import { StudentData, Course, Subject, Transaction, Notification } from "../../types";
+import { StudentData, Course, Subject, Transaction, Notification } from "../../types"; // Adjusted path
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import CheckoutPage from "../../components/CheckoutPage";
-import { markNotificationAsRead } from "../../utils/utils"; // Import the utility function
+import { markNotificationAsRead } from "../../utils/utils";
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<any>(undefined);
@@ -128,7 +127,7 @@ export default function Dashboard() {
                   const classworkKeys = Object.keys(updatedGrades).filter((k) => k.startsWith("C"));
                   const classworkValues = classworkKeys.map((k) => parseFloat(updatedGrades[k] || "0")).filter((v) => !isNaN(v));
                   const exam = parseFloat(updatedGrades.exam || "0");
-                  if (비스workValues.length && !isNaN(exam)) {
+                  if (classworkValues.length && !isNaN(exam)) {
                     const classworkAvg = classworkValues.reduce((sum, v) => sum + v, 0) / classworkValues.length;
                     updatedGrades.final = (classworkAvg * 0.4 + exam * 0.6).toFixed(2);
                   }

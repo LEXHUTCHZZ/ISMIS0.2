@@ -1,33 +1,28 @@
+// types.ts (at the root of your project)
+
 export interface User {
   id?: string;
-  name: string;
   email: string;
   role: "student" | "teacher" | "admin" | "accountsadmin";
-  profilePicture?: string; // Add profile picture URL
-}
-
-export interface StudentData {
-  id?: string;
   name: string;
-  email: string;
-  lecturerId: string | null;
-  courses?: Course[];
-  totalOwed: number;
-  totalPaid: number;
-  balance: number;
-  paymentStatus: string;
-  clearance: boolean;
-  transactions: Transaction[];
-  notifications: Notification[];
-  idNumber?: string; // Add ID number
-  phoneNumber?: string; // Add phone number
-  homeAddress?: string; // Add home address
-  profilePicture?: string; // Add profile picture URL
+  profilePicture?: string;
 }
 
-// Other types remain unchanged
+export interface Subject {
+  name: string;
+  grades?: {
+    C1?: string;
+    C2?: string;
+    exam?: string;
+    final?: string;
+    status?: string;
+    [key: string]: string | undefined;
+  };
+  comments?: string;
+}
+
 export interface Course {
-  id: string;
+  id?: string;
   name: string;
   fee: number;
   subjects?: Subject[];
@@ -35,16 +30,10 @@ export interface Course {
   tests?: Test[];
 }
 
-export interface Subject {
-  name: string;
-  grades?: { [key: string]: string };
-  comments?: string;
-}
-
 export interface Transaction {
   id?: string;
-  amount: number;
   date: string;
+  amount: number;
   status: string;
 }
 
@@ -66,14 +55,12 @@ export interface Resource {
 export interface Test {
   id: string;
   title: string;
-  questions: Question[];
+  questions: {
+    question: string;
+    options?: string[];
+    correctAnswer: string;
+  }[];
   createdAt: string;
-}
-
-export interface Question {
-  question: string;
-  options?: string[];
-  correctAnswer: string;
 }
 
 export interface TestResponse {
@@ -81,4 +68,23 @@ export interface TestResponse {
   answers: { [questionIndex: number]: string };
   score?: number;
   submittedAt?: string | null;
+}
+
+export interface StudentData {
+  id?: string;
+  name: string;
+  email?: string;
+  lecturerId?: string | null;
+  courses?: Course[];
+  totalOwed: number;
+  totalPaid: number;
+  paymentStatus: string;
+  balance: number;
+  clearance: boolean;
+  transactions: Transaction[];
+  notifications: Notification[];
+  profilePicture?: string;
+  idNumber?: string;
+  phoneNumber?: string;
+  homeAddress?: string;
 }
