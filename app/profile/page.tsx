@@ -7,7 +7,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../contexts/AuthContext";
-import { StudentData, User } from "../../types";
+import { StudentData, User } from "../../models";
 
 export default function Profile() {
   const [userData, setUserData] = useState<User | null>(null);

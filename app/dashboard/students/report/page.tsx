@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { auth, db } from "../../../../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, getDocs, doc, getDoc } from "firebase/firestore"; // Updated imports
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../../../contexts/AuthContext";

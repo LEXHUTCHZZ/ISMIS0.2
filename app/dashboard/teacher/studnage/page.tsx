@@ -8,7 +8,7 @@ import { doc, getDoc, updateDoc, collection, getDocs } from "firebase/firestore"
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../../../contexts/AuthContext";
-import { StudentData, Course, Subject } from "../../../../types";
+import { StudentData, Course, Subject } from "../../../../models";
 
 export default function StudentManagement() {
   const [userData, setUserData] = useState<any>(undefined);
