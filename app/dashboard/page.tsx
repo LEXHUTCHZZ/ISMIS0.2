@@ -824,7 +824,6 @@ export default function Dashboard() {
                                                     type="radio"
                                                     name={`${test.id}-${idx}`}
                                                     value={opt}
-
                                                     checked={testResponses[test.id]?.answers?.[idx] === opt}
                                                     onChange={(e) => handleTestAnswerChange(test.id, idx, e.target.value)}
                                                     className="mr-2"
@@ -914,54 +913,51 @@ export default function Dashboard() {
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
-                  <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-red-800 mb-4">Assign Students to Yourself</h3>
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h3 className="text-lg font-semibold text-red-800 mb-4">Assign Students</h3>
                     {allStudents.length ? (
-                      <div>
-                        <h4 className="text-md font-semibold text-red-800 mb-2">Available Students</h4>
-                        {allStudents
-                          .filter((s) => !s.lecturerId)
-                          .map((s) => (
-                            <div key={s.id} className="flex justify-between items-center mb-2">
-                              <p className="text-red-800">{s.name}</p>
-                              <button
-                                onClick={() => user && handleAssignLecturer(s.id, user.uid)}
-                                className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                              >
-                                Assign to Me
-                              </button>
-                            </div>
-                          ))}
-                        {!allStudents.some((s) => !s.lecturerId) && (
-                          <p className="text-red-800">No unassigned students available.</p>
-                        )}
-                      </div>
+                      allStudents
+                        .filter((s) => !s.lecturerId)
+                        .map((s) => (
+                          <div key={s.id} className="flex justify-between mb-2">
+                            <p className="text-red-800">{s.name}</p>
+                            <button
+                              onClick={() => user && handleAssignLecturer(s.id, user.uid)}
+                              className="px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
+                            >
+                              Assign
+                            </button>
+                          </div>
+                        ))
                     ) : (
                       <p className="text-red-800">No students available.</p>
                     )}
+                    {!allStudents.some((s) => !s.lecturerId) && (
+                      <p className="text-red-800">No unassigned students.</p>
+                    )}
                   </div>
-                  <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-red-800 mb-4">Upload Course Resources</h3>
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h3 className="text-lg font-semibold text-red-800 mb-4">Upload Resources</h3>
                     <select
                       value={newResource.type}
                       onChange={(e) => setNewResource({ ...newResource, type: e.target.value })}
                       className="w-full p-2 border rounded text-red-800 mb-2"
                     >
-                      <option value="">Select Resource Type</option>
+                      <option value="">Resource Type</option>
                       <option value="YouTube Video">YouTube Video</option>
                       <option value="PDF">PDF</option>
                       <option value="Other">Other</option>
                     </select>
                     <input
                       type="text"
-                      placeholder="Resource Name"
+                      placeholder="Name"
                       value={newResource.name}
                       onChange={(e) => setNewResource({ ...newResource, name: e.target.value })}
                       className="w-full p-2 border rounded text-red-800 mb-2"
                     />
                     <input
                       type="text"
-                      placeholder="Resource URL"
+                      placeholder="URL"
                       value={newResource.url}
                       onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
                       className="w-full p-2 border rounded text-red-800 mb-2"
@@ -980,15 +976,15 @@ export default function Dashboard() {
                     </select>
                     <button
                       onClick={handleUploadResource}
-                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                      className="px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
                     >
-                      Upload Resource
+                      Upload
                     </button>
                   </div>
                 </div>
                 <div className="space-y-6">
-                  <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-red-800 mb-4">Create Course Tests</h3>
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h3 className="text-lg font-semibold text-red-800 mb-4">Create Tests</h3>
                     <select
                       value={newTest.courseId}
                       onChange={(e) => setNewTest({ ...newTest, courseId: e.target.value })}
@@ -1009,50 +1005,50 @@ export default function Dashboard() {
                       className="w-full p-2 border rounded text-red-800 mb-2"
                     />
                     {newTest.questions.map((q, qIdx) => (
-                      <div key={qIdx} className="mb-4 border p-4 rounded">
+                      <div key={qIdx} className="mb-2 border p-2 rounded">
                         <input
                           type="text"
                           placeholder={`Question ${qIdx + 1}`}
                           value={q.question}
                           onChange={(e) => {
-                            const updatedQuestions = [...newTest.questions];
-                            updatedQuestions[qIdx].question = e.target.value;
-                            setNewTest({ ...newTest, questions: updatedQuestions });
+                            const updated = [...newTest.questions];
+                            updated[qIdx].question = e.target.value;
+                            setNewTest({ ...newTest, questions: updated });
                           }}
-                          className="w-full p-2 border rounded text-red-800 mb-2"
+                          className="w-full p-1 border rounded text-red-800 mb-1"
                         />
                         {q.options.map((opt, optIdx) => (
-                          <div key={optIdx} className="flex items-center mb-2">
+                          <div key={optIdx} className="flex mb-1">
                             <input
                               type="text"
                               placeholder={`Option ${optIdx + 1}`}
                               value={opt}
                               onChange={(e) => {
-                                const updatedQuestions = [...newTest.questions];
-                                updatedQuestions[qIdx].options[optIdx] = e.target.value;
-                                setNewTest({ ...newTest, questions: updatedQuestions });
+                                const updated = [...newTest.questions];
+                                updated[qIdx].options[optIdx] = e.target.value;
+                                setNewTest({ ...newTest, questions: updated });
                               }}
-                              className="w-full p-2 border rounded text-red-800 mr-2"
+                              className="w-full p-1 border rounded text-red-800 mr-1"
                             />
                             <button
                               onClick={() => {
-                                const updatedQuestions = [...newTest.questions];
-                                updatedQuestions[qIdx].options.splice(optIdx, 1);
-                                setNewTest({ ...newTest, questions: updatedQuestions });
+                                const updated = [...newTest.questions];
+                                updated[qIdx].options.splice(optIdx, 1);
+                                setNewTest({ ...newTest, questions: updated });
                               }}
-                              className="px-2 py-1 bg-red-800 text-white rounded-md hover:bg-red-700"
+                              className="px-2 py-1 bg-red-800 text-white rounded hover:bg-red-700"
                             >
-                              Remove Option
+                              X
                             </button>
                           </div>
                         ))}
                         <button
                           onClick={() => {
-                            const updatedQuestions = [...newTest.questions];
-                            updatedQuestions[qIdx].options.push("");
-                            setNewTest({ ...newTest, questions: updatedQuestions });
+                            const updated = [...newTest.questions];
+                            updated[qIdx].options.push("");
+                            setNewTest({ ...newTest, questions: updated });
                           }}
-                          className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 mb-2"
+                          className="px-2 py-1 bg-red-800 text-white rounded hover:bg-red-700 mb-1"
                         >
                           Add Option
                         </button>
@@ -1061,21 +1057,21 @@ export default function Dashboard() {
                           placeholder="Correct Answer"
                           value={q.correctAnswer}
                           onChange={(e) => {
-                            const updatedQuestions = [...newTest.questions];
-                            updatedQuestions[qIdx].correctAnswer = e.target.value;
-                            setNewTest({ ...newTest, questions: updatedQuestions });
+                            const updated = [...newTest.questions];
+                            updated[qIdx].correctAnswer = e.target.value;
+                            setNewTest({ ...newTest, questions: updated });
                           }}
-                          className="w-full p-2 border rounded text-red-800 mb-2"
+                          className="w-full p-1 border rounded text-red-800 mb-1"
                         />
                         <button
                           onClick={() => {
-                            const updatedQuestions = [...newTest.questions];
-                            updatedQuestions.splice(qIdx, 1);
-                            setNewTest({ ...newTest, questions: updatedQuestions });
+                            const updated = [...newTest.questions];
+                            updated.splice(qIdx, 1);
+                            setNewTest({ ...newTest, questions: updated });
                           }}
-                          className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                          className="px-2 py-1 bg-red-800 text-white rounded hover:bg-red-700"
                         >
-                          Remove Question
+                          Remove
                         </button>
                       </div>
                     ))}
@@ -1086,27 +1082,26 @@ export default function Dashboard() {
                           questions: [...newTest.questions, { question: "", options: [""], correctAnswer: "" }],
                         })
                       }
-                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 mb-2"
+                      className="px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700 mr-2"
                     >
                       Add Question
                     </button>
                     <button
                       onClick={handleCreateTest}
-                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                      className="px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
                     >
-                      Create Test
+                      Create
                     </button>
                   </div>
-                  <div className="bg-white p-4 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-red-800 mb-4">Manage Student Grades</h3>
-                    <h4 className="text-md font-semibold text-red-800 mb-2">Select a Student</h4>
+                  <div className="bg-white p-4 rounded-lg shadow">
+                    <h3 className="text-lg font-semibold text-red-800 mb-4">Manage Grades</h3>
                     {allStudents.length ? (
                       <select
                         value={selectedStudentId || ""}
                         onChange={(e) => setSelectedStudentId(e.target.value || null)}
-                        className="w-full p-2 border rounded text-red-800"
+                        className="w-full p-2 border rounded text-red-800 mb-4"
                       >
-                        <option value="">Select a student</option>
+                        <option value="">Select Student</option>
                         {allStudents.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.name}
@@ -1120,27 +1115,27 @@ export default function Dashboard() {
                       allStudents
                         .filter((s) => s.id === selectedStudentId)
                         .map((s) => (
-                          <div key={s.id} className="mt-4">
+                          <div key={s.id}>
                             <p className="text-lg font-medium text-red-800 mb-2">{s.name}</p>
-                            {(s.courses || []).map((c) => (
+                            {s.courses?.map((c) => (
                               <div key={c.name} className="mb-4">
                                 <p className="text-red-800 font-medium">{c.name}</p>
                                 <table className="w-full mt-2 border-collapse">
                                   <thead>
                                     <tr className="bg-red-800 text-white">
-                                      <th className="p-2 border">Subject</th>
-                                      <th className="p-2 border">C1</th>
-                                      <th className="p-2 border">C2</th>
-                                      <th className="p-2 border">Exam</th>
-                                      <th className="p-2 border">Final</th>
-                                      <th className="p-2 border">Comments</th>
+                                      <th className="p-1 border">Subject</th>
+                                      <th className="p-1 border">C1</th>
+                                      <th className="p-1 border">C2</th>
+                                      <th className="p-1 border">Exam</th>
+                                      <th className="p-1 border">Final</th>
+                                      <th className="p-1 border">Comments</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {(c.subjects || []).map((sub) => (
                                       <tr key={sub.name}>
-                                        <td className="p-2 border text-red-800">{sub.name}</td>
-                                        <td className="p-2 border">
+                                        <td className="p-1 border text-red-800">{sub.name}</td>
+                                        <td className="p-1 border">
                                           <input
                                             type="number"
                                             value={sub.grades?.C1 || ""}
@@ -1150,9 +1145,10 @@ export default function Dashboard() {
                                             className="w-full p-1 border rounded text-red-800"
                                             min="0"
                                             max="100"
+                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
-                                        <td className="p-2 border">
+                                        <td className="p-1 border">
                                           <input
                                             type="number"
                                             value={sub.grades?.C2 || ""}
@@ -1162,9 +1158,10 @@ export default function Dashboard() {
                                             className="w-full p-1 border rounded text-red-800"
                                             min="0"
                                             max="100"
+                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
-                                        <td className="p-2 border">
+                                        <td className="p-1 border">
                                           <input
                                             type="number"
                                             value={sub.grades?.exam || ""}
@@ -1174,10 +1171,11 @@ export default function Dashboard() {
                                             className="w-full p-1 border rounded text-red-800"
                                             min="0"
                                             max="100"
+                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
-                                        <td className="p-2 border text-red-800">{sub.grades?.final || "N/A"}</td>
-                                        <td className="p-2 border">
+                                        <td className="p-1 border text-red-800">{sub.grades?.final || "N/A"}</td>
+                                        <td className="p-1 border">
                                           <input
                                             type="text"
                                             value={sub.comments || ""}
@@ -1185,32 +1183,36 @@ export default function Dashboard() {
                                               handleGradeUpdate(s.id, c.name, sub.name, "comments", e.target.value)
                                             }
                                             className="w-full p-1 border rounded text-red-800"
-                                            placeholder="Add comments"
+                                            placeholder="Comments"
+                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
                                       </tr>
                                     ))}
                                   </tbody>
                                 </table>
-                                <div className="mt-2">
-                                  <input
-                                    type="text"
-                                    placeholder="Add new subject"
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" && e.currentTarget.value) {
-                                        handleAddSubject(s.id, c.name, e.currentTarget.value);
-                                        e.currentTarget.value = "";
-                                      }
-                                    }}
-                                    className="p-2 border rounded text-red-800"
-                                  />
-                                </div>
-                                <button
-                                  onClick={() => handleUpdateStudent(s.id)}
-                                  className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                                >
-                                  Save Grades
-                                </button>
+                                <input
+                                  type="text"
+                                  placeholder="Add subject"
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && e.currentTarget.value && s.lecturerId === user?.uid) {
+                                      handleAddSubject(s.id, c.name, e.currentTarget.value);
+                                      e.currentTarget.value = "";
+                                    }
+                                  }}
+                                  className="mt-2 p-1 border rounded text-red-800"
+                                  disabled={s.lecturerId !== user?.uid}
+                                />
+                                {s.lecturerId === user?.uid ? (
+                                  <button
+                                    onClick={() => handleUpdateStudent(s.id)}
+                                    className="mt-2 px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
+                                  >
+                                    Save
+                                  </button>
+                                ) : (
+                                  <p className="mt-2 text-red-800">Only assigned teachers can edit grades.</p>
+                                )}
                               </div>
                             ))}
                           </div>
