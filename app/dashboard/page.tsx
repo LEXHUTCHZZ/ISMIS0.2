@@ -78,6 +78,7 @@ export default function Dashboard() {
     }
   }, [loading]);
 
+  // Fetch user, student, courses, and lecturers data
   useEffect(() => {
     if (!user) {
       router.push("/auth/login");
@@ -107,7 +108,7 @@ export default function Dashboard() {
               const hour = new Date().getHours();
               setGreeting(hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Night");
 
-              // Fetch student data if user is a student or teacher
+              // Fetch student data for students or teachers
               if (["student", "teacher"].includes(fetchedUserData.role)) {
                 const studentDocRef = doc(db, "students", currentUser.uid);
                 const unsubscribeStudent = onSnapshot(
@@ -121,7 +122,7 @@ export default function Dashboard() {
                         notifications: fetchedStudentData.notifications || [],
                       });
                     } else {
-                      setStudentData(null); // No student profile yet
+                      setStudentData(null);
                     }
                     setLoading(false);
                   },
@@ -137,9 +138,9 @@ export default function Dashboard() {
                 setLoading(false);
               }
 
-              // Fetch additional data for teacher/admin roles
+              // Fetch data for teacher/admin/accountsadmin roles
               if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
-                // Fetch students from the top-level students collection
+                // Fetch all students
                 const studentsSnapshot = await getDocs(collection(db, "students"));
                 const studentsList = studentsSnapshot.docs.map((doc) => ({
                   id: doc.id,
@@ -222,6 +223,7 @@ export default function Dashboard() {
     return () => unsubscribeAuth();
   }, [user, router, selectedStudentId]);
 
+  // Calculate average grade for a course
   const calculateCourseAverage = (subjects: Subject[] | undefined): string => {
     if (!subjects || !Array.isArray(subjects) || subjects.length === 0) return "N/A";
     const validGrades = subjects
@@ -230,12 +232,13 @@ export default function Dashboard() {
     return validGrades.length ? (validGrades.reduce((sum, g) => sum + g, 0) / validGrades.length).toFixed(2) : "N/A";
   };
 
+  // Update grades for a student
   const handleGradeUpdate = useCallback(
     (studentId: string, courseName: string, subjectName: string, field: string, value: string) => {
       if (!["teacher", "admin"].includes(role) || !user) return;
       setAllStudents((prev) =>
         prev.map((s) => {
-          if (s.id !== studentId || (role === "teacher" && s.lecturerId !== user.uid)) return s;
+          if (s.id !== studentId) return s; // Teachers can update any student now
           const updatedCourses = (s.courses || []).map((c) => {
             if (c.name !== courseName) return c;
             const updatedSubjects = (c.subjects || []).map((sub) => {
@@ -262,13 +265,11 @@ export default function Dashboard() {
     [role, user]
   );
 
+  // Save student updates to Firestore
   const handleUpdateStudent = async (studentId: string) => {
     if (!user) return;
     const studentToUpdate = allStudents.find((s) => s.id === studentId);
     if (!studentToUpdate) return alert("Student not found.");
-    if (role === "teacher" && studentToUpdate.lecturerId !== user.uid) {
-      return alert("You can only update grades for students assigned to you.");
-    }
     try {
       await updateDoc(doc(db, "students", studentId), { courses: studentToUpdate.courses || [] });
       alert("Grades updated successfully!");
@@ -278,6 +279,7 @@ export default function Dashboard() {
     }
   };
 
+  // Grant clearance (admin/accountsadmin only)
   const handleGrantClearance = async (studentId: string) => {
     if (!["admin", "accountsadmin"].includes(role)) return;
     try {
@@ -290,6 +292,7 @@ export default function Dashboard() {
     }
   };
 
+  // Remove clearance (admin/accountsadmin only)
   const handleRemoveClearance = async (studentId: string) => {
     if (!["admin", "accountsadmin"].includes(role)) return;
     try {
@@ -302,8 +305,10 @@ export default function Dashboard() {
     }
   };
 
+  // Handle payment success callback
   const handlePaymentSuccess = () => window.location.reload();
 
+  // Enroll student in a course
   const handleEnrollCourse = async (course: Course) => {
     if (!studentData || !user) return;
     const isAlreadyEnrolled = studentData.courses?.some((c) => c.name === course.name) || false;
@@ -323,10 +328,11 @@ export default function Dashboard() {
     }
   };
 
+  // Add a subject to a student's course
   const handleAddSubject = async (studentId: string, courseName: string, subjectName: string) => {
     if (!["teacher", "admin"].includes(role) || !user) return;
     const studentToUpdate = allStudents.find((s) => s.id === studentId);
-    if (!studentToUpdate || (role === "teacher" && studentToUpdate.lecturerId !== user.uid)) return;
+    if (!studentToUpdate) return;
     const updatedCourses = (studentToUpdate.courses || []).map((c) =>
       c.name === courseName
         ? { ...c, subjects: [...(c.subjects || []), { name: subjectName, grades: {}, comments: "" }] }
@@ -342,6 +348,7 @@ export default function Dashboard() {
     }
   };
 
+  // Add a new course
   const handleAddCourse = async (courseName: string, fee: number) => {
     if (role !== "admin" || !courseName || isNaN(fee)) return;
     try {
@@ -356,6 +363,7 @@ export default function Dashboard() {
     }
   };
 
+  // Add a new student
   const handleAddStudent = async (name: string, email: string, lecturerId: string) => {
     if (role !== "admin" || !name || !email) return;
     try {
@@ -383,13 +391,11 @@ export default function Dashboard() {
     }
   };
 
+  // Assign a lecturer to a student
   const handleAssignLecturer = async (studentId: string, lecturerId: string) => {
     if (!["admin", "teacher"].includes(role) || !user) return;
     const studentToUpdate = allStudents.find((s) => s.id === studentId);
     if (!studentToUpdate) return alert("Student not found.");
-    if (role === "teacher" && studentToUpdate.lecturerId && studentToUpdate.lecturerId !== user.uid) {
-      return alert("This student is already assigned to another teacher. Please contact an admin to reassign.");
-    }
     try {
       await updateDoc(doc(db, "students", studentId), { lecturerId: lecturerId || null });
       setAllStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, lecturerId: lecturerId || null } : s)));
@@ -400,8 +406,9 @@ export default function Dashboard() {
     }
   };
 
+  // Send a notification to a student
   const handleSendNotification = async (studentId: string, message: string) => {
-    if (role !== "admin" || !message) return;
+    if (!["teacher", "admin"].includes(role) || !message) return;
     try {
       const notificationRef = collection(db, "students", studentId, "notifications");
       const newNotification: Notification = { id: "", message, date: new Date().toISOString(), read: false };
@@ -420,6 +427,7 @@ export default function Dashboard() {
     }
   };
 
+  // Update test answers
   const handleTestAnswerChange = (testId: string, questionIndex: number, answer: string) => {
     if (!user) return;
     setTestResponses((prev) => ({
@@ -433,6 +441,7 @@ export default function Dashboard() {
     }));
   };
 
+  // Submit a test
   const handleSubmitTest = async (courseId: string, testId: string) => {
     if (!user || !testResponses[testId]) return;
     try {
@@ -461,6 +470,7 @@ export default function Dashboard() {
     }
   };
 
+  // Upload a course resource
   const handleUploadResource = async () => {
     if (!["teacher", "admin"].includes(role) || !newResource.courseId || !newResource.name || !newResource.type || !newResource.url) {
       alert("Please fill in all resource fields and select a course.");
@@ -496,6 +506,7 @@ export default function Dashboard() {
     }
   };
 
+  // Create a new test
   const handleCreateTest = async () => {
     if (!["teacher", "admin"].includes(role) || !newTest.courseId || !newTest.title) {
       alert("Please select a course and enter a test title.");
@@ -531,6 +542,7 @@ export default function Dashboard() {
     }
   };
 
+  // Download financial report as PDF
   const downloadFinancialReport = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
@@ -552,14 +564,17 @@ export default function Dashboard() {
     doc.save("Financial_Report.pdf");
   };
 
+  // Filter students by search query
   const filteredStudents = allStudents.filter((student) =>
     student.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Loading state UI
   if (loading) {
     return <p className="text-red-800 text-center">Loading dashboard...</p>;
   }
 
+  // Error state UI
   if (error) {
     return (
       <div className="text-red-800 text-center">
@@ -574,12 +589,14 @@ export default function Dashboard() {
     );
   }
 
+  // No user or role UI
   if (!userData || !role) {
     return <p className="text-red-800 text-center">Please log in again.</p>;
   }
 
   return (
     <div className="flex min-h-screen bg-gray-100">
+      {/* Sidebar Navigation */}
       <div className="w-64 bg-white shadow-md p-4">
         <h3 className="text-xl font-semibold text-red-800 mb-4">SMIS Menu</h3>
         <ul className="space-y-2">
@@ -596,8 +613,10 @@ export default function Dashboard() {
         </ul>
       </div>
 
+      {/* Main Content */}
       <div className="flex-1 p-6">
         <div className="max-w-7xl mx-auto">
+          {/* Header with User Info */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center space-x-4">
               <img
@@ -621,6 +640,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Admin: Student Search */}
           {role === "admin" && (
             <div className="mb-6">
               <div className="bg-white p-4 rounded-lg shadow-md">
@@ -667,6 +687,7 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* Student Dashboard */}
           {role === "student" && (
             <div className="space-y-6">
               {!studentData ? (
@@ -678,6 +699,7 @@ export default function Dashboard() {
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <div className="space-y-6">
+                    {/* Notifications */}
                     <div className="bg-white p-4 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Notifications</h3>
                       {studentData.notifications.length ? (
@@ -713,6 +735,7 @@ export default function Dashboard() {
                         <p className="text-red-800">No notifications.</p>
                       )}
                     </div>
+                    {/* Grades */}
                     <div className="bg-white p-4 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Your Grades</h3>
                       {studentData.courses?.length ? (
@@ -757,6 +780,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <div className="space-y-6">
+                    {/* Course Resources */}
                     <div className="bg-white p-4 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Course Resources</h3>
                       {studentData.courses?.length ? (
@@ -791,6 +815,7 @@ export default function Dashboard() {
                         <p className="text-red-800">You are not enrolled in any courses. Please enroll to see resources.</p>
                       )}
                     </div>
+                    {/* Course Tests */}
                     <div className="bg-white p-4 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Course Tests</h3>
                       {studentData.courses?.length ? (
@@ -863,6 +888,7 @@ export default function Dashboard() {
                         <p className="text-red-800">You are not enrolled in any courses. Please enroll to see tests.</p>
                       )}
                     </div>
+                    {/* Payments */}
                     <div className="bg-white p-4 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Payments</h3>
                       <p className="text-red-800">Balance: {studentData.balance.toLocaleString()} JMD</p>
@@ -882,6 +908,7 @@ export default function Dashboard() {
                       </div>
                       <CheckoutPage onPaymentSuccess={handlePaymentSuccess} />
                     </div>
+                    {/* Course Enrollment */}
                     <div className="bg-white p-4 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Enroll in Courses</h3>
                       {allCourses.length ? (
@@ -909,33 +936,36 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* Teacher Dashboard */}
           {role === "teacher" && (
             <div className="space-y-6">
+              {/* Two-column layout for teacher actions */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
+                  {/* Assign Students Section */}
                   <div className="bg-white p-4 rounded-lg shadow">
                     <h3 className="text-lg font-semibold text-red-800 mb-4">Assign Students</h3>
+                    {/* Changed to show ALL students, not just unassigned */}
                     {allStudents.length ? (
-                      allStudents
-                        .filter((s) => !s.lecturerId)
-                        .map((s) => (
-                          <div key={s.id} className="flex justify-between mb-2">
-                            <p className="text-red-800">{s.name}</p>
-                            <button
-                              onClick={() => user && handleAssignLecturer(s.id, user.uid)}
-                              className="px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
-                            >
-                              Assign
-                            </button>
-                          </div>
-                        ))
+                      allStudents.map((s) => (
+                        <div key={s.id} className="flex justify-between mb-2">
+                          <p className="text-red-800">
+                            {s.name} {s.lecturerId ? `(Assigned to ${allLecturers.find(l => l.id === s.lecturerId)?.name || 'another teacher'})` : '(Unassigned)'}
+                          </p>
+                          <button
+                            onClick={() => user && handleAssignLecturer(s.id, user.uid)}
+                            className="px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
+                            disabled={s.lecturerId === user?.uid}
+                          >
+                            {s.lecturerId === user?.uid ? "Assigned" : "Assign to Me"}
+                          </button>
+                        </div>
+                      ))
                     ) : (
                       <p className="text-red-800">No students available.</p>
                     )}
-                    {!allStudents.some((s) => !s.lecturerId) && (
-                      <p className="text-red-800">No unassigned students.</p>
-                    )}
                   </div>
+                  {/* Upload Resources Section */}
                   <div className="bg-white p-4 rounded-lg shadow">
                     <h3 className="text-lg font-semibold text-red-800 mb-4">Upload Resources</h3>
                     <select
@@ -983,6 +1013,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="space-y-6">
+                  {/* Create Tests Section */}
                   <div className="bg-white p-4 rounded-lg shadow">
                     <h3 className="text-lg font-semibold text-red-800 mb-4">Create Tests</h3>
                     <select
@@ -1093,8 +1124,10 @@ export default function Dashboard() {
                       Create
                     </button>
                   </div>
+                  {/* Manage Grades Section */}
                   <div className="bg-white p-4 rounded-lg shadow">
                     <h3 className="text-lg font-semibold text-red-800 mb-4">Manage Grades</h3>
+                    {/* Dropdown to select any student */}
                     {allStudents.length ? (
                       <select
                         value={selectedStudentId || ""}
@@ -1111,6 +1144,7 @@ export default function Dashboard() {
                     ) : (
                       <p className="text-red-800">No students available.</p>
                     )}
+                    {/* Display selected student's grades */}
                     {selectedStudentId &&
                       allStudents
                         .filter((s) => s.id === selectedStudentId)
@@ -1145,7 +1179,6 @@ export default function Dashboard() {
                                             className="w-full p-1 border rounded text-red-800"
                                             min="0"
                                             max="100"
-                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
                                         <td className="p-1 border">
@@ -1158,7 +1191,6 @@ export default function Dashboard() {
                                             className="w-full p-1 border rounded text-red-800"
                                             min="0"
                                             max="100"
-                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
                                         <td className="p-1 border">
@@ -1171,7 +1203,6 @@ export default function Dashboard() {
                                             className="w-full p-1 border rounded text-red-800"
                                             min="0"
                                             max="100"
-                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
                                         <td className="p-1 border text-red-800">{sub.grades?.final || "N/A"}</td>
@@ -1184,7 +1215,6 @@ export default function Dashboard() {
                                             }
                                             className="w-full p-1 border rounded text-red-800"
                                             placeholder="Comments"
-                                            disabled={s.lecturerId !== user?.uid}
                                           />
                                         </td>
                                       </tr>
@@ -1195,24 +1225,19 @@ export default function Dashboard() {
                                   type="text"
                                   placeholder="Add subject"
                                   onKeyDown={(e) => {
-                                    if (e.key === "Enter" && e.currentTarget.value && s.lecturerId === user?.uid) {
+                                    if (e.key === "Enter" && e.currentTarget.value) {
                                       handleAddSubject(s.id, c.name, e.currentTarget.value);
                                       e.currentTarget.value = "";
                                     }
                                   }}
                                   className="mt-2 p-1 border rounded text-red-800"
-                                  disabled={s.lecturerId !== user?.uid}
                                 />
-                                {s.lecturerId === user?.uid ? (
-                                  <button
-                                    onClick={() => handleUpdateStudent(s.id)}
-                                    className="mt-2 px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
-                                  >
-                                    Save
-                                  </button>
-                                ) : (
-                                  <p className="mt-2 text-red-800">Only assigned teachers can edit grades.</p>
-                                )}
+                                <button
+                                  onClick={() => handleUpdateStudent(s.id)}
+                                  className="mt-2 px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
+                                >
+                                  Save
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -1223,10 +1248,12 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* Admin Dashboard */}
           {role === "admin" && (
             <div className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <div className="space-y-6">
+                  {/* Analytics */}
                   <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-lg font-semibold text-red-800 mb-4">Analytics</h3>
                     <p className="text-red-800">Total Students: {allStudents.length}</p>
@@ -1235,6 +1262,7 @@ export default function Dashboard() {
                       Total Revenue: {allStudents.reduce((sum, s) => sum + s.totalPaid, 0).toLocaleString()} JMD
                     </p>
                   </div>
+                  {/* Add New Student */}
                   <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-lg font-semibold text-red-800 mb-4">Add New Student</h3>
                     <input
@@ -1269,6 +1297,7 @@ export default function Dashboard() {
                       Add Student
                     </button>
                   </div>
+                  {/* Add New Course */}
                   <div className="bg-white p-4 rounded-lg shadow-md">
                     <h3 className="text-lg font-semibold text-red-800 mb-4">Add New Course</h3>
                     <input
@@ -1296,6 +1325,7 @@ export default function Dashboard() {
                   </div>
                 </div>
                 <div className="space-y-6">
+                  {/* Student Management */}
                   {allStudents.length ? (
                     allStudents.map((s) => (
                       <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
@@ -1467,8 +1497,10 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* Accounts Admin Dashboard */}
           {role === "accountsadmin" && (
             <div className="space-y-6">
+              {/* Financial Overview */}
               <div className="bg-white p-4 rounded-lg shadow-md">
                 <h3 className="text-lg font-semibold text-red-800 mb-4">Financial Overview</h3>
                 <p className="text-red-800">Total Students: {allStudents.length}</p>
@@ -1482,6 +1514,7 @@ export default function Dashboard() {
                   Download Financial Report
                 </button>
               </div>
+              {/* Student Financial Details */}
               <div className="space-y-4">
                 {allStudents.length ? (
                   allStudents.map((s) => (
@@ -1506,6 +1539,7 @@ export default function Dashboard() {
                       <p className="text-red-800">Balance: {s.balance.toLocaleString()} JMD</p>
                       <p className="text-red-800">Status: {s.paymentStatus}</p>
                       <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
+                      {/* Clearance Actions */}
                       <div className="flex gap-4 mt-2">
                         <button
                           onClick={() => handleGrantClearance(s.id)}
