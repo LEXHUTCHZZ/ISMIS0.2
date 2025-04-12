@@ -226,17 +226,6 @@ export default function Dashboard() {
     }
   };
 
-  const handleAssignLecturer = async (studentId: string, lecturerId: string) => {
-    if (!["teacher", "admin"].includes(role)) return;
-    try {
-      await updateDoc(doc(db, "students", studentId), { lecturerId: lecturerId || null });
-      setAllStudents((prev) => prev.map((s) => (s.id === studentId ? { ...s, lecturerId: lecturerId || null } : s)));
-      alert("Lecturer assigned");
-    } catch {
-      alert("Failed to assign lecturer");
-    }
-  };
-
   const handleSendNotification = async (studentId: string, message: string) => {
     if (!["teacher", "admin"].includes(role) || !message) return;
     try {
@@ -553,18 +542,6 @@ export default function Dashboard() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <div className="space-y-4">
                   <div className="bg-white p-4 rounded shadow">
-                    <h3 className="text-lg font-semibold text-red-800 mb-2">Assign Students</h3>
-                    {allStudents.length ? allStudents.map((s) => (
-                      <div key={s.id} className="flex justify-between mb-2">
-                        <p className="text-red-800">{s.name} {s.lecturerId ? `(${allLecturers.find((l) => l.id === s.lecturerId)?.name || "Assigned"})` : "(Unassigned)"}</p>
-                        <select value={s.lecturerId || ""} onChange={(e) => handleAssignLecturer(s.id, e.target.value)} className="p-1 border rounded text-red-800">
-                          <option value="">Unassign</option>
-                          {allLecturers.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-                        </select>
-                      </div>
-                    )) : <p className="text-red-800">No students</p>}
-                  </div>
-                  <div className="bg-white p-4 rounded shadow">
                     <h3 className="text-lg font-semibold text-red-800 mb-2">Upload Resources</h3>
                     <select value={newResource.type} onChange={(e) => setNewResource({ ...newResource, type: e.target.value })} className="w-full p-2 border rounded text-red-800 mb-2">
                       <option value="">Type</option>
@@ -810,7 +787,7 @@ export default function Dashboard() {
                       <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
                       <div className="mt-2">
                         <label className="text-red-800 mr-2">Lecturer:</label>
-                        <select value={s.lecturerId || ""} onChange={(e) => handleAssignLecturer(s.id, e.target.value)} className="p-2 border rounded text-red-800">
+                        <select value={s.lecturerId || ""} onChange={(e) => handleAddStudent(s.id, s.email, e.target.value)} className="p-2 border rounded text-red-800">
                           <option value="">None</option>
                           {allLecturers.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
                         </select>
