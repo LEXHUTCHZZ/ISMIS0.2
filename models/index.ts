@@ -98,3 +98,12 @@ export interface UserData {
   role: "student" | "teacher" | "admin" | "accountsadmin";
   profilePicture?: string;
 }
+
+export interface Resource {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  uploadDate: string;
+  courseId: string; // Add courseId to the Resource type
+}
