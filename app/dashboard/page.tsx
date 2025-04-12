@@ -50,7 +50,7 @@ export default function Dashboard() {
     type: "",
     url: "",
     uploadDate: "",
-    courseId: "", // Add courseId to state
+    courseId: "",
   });
   const [newTest, setNewTest] = useState<TestCreation>({
     id: "",
@@ -107,7 +107,7 @@ export default function Dashboard() {
               const hour = new Date().getHours();
               setGreeting(hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Night");
 
-              // Fetch student data if user is a student or teacher (for self-registered students)
+              // Fetch student data if user is a student or teacher
               if (["student", "teacher"].includes(fetchedUserData.role)) {
                 const studentDocRef = doc(db, "students", currentUser.uid);
                 const unsubscribeStudent = onSnapshot(
@@ -131,8 +131,6 @@ export default function Dashboard() {
                     setLoading(false);
                   }
                 );
-
-                // Cleanup student listener
                 return () => unsubscribeStudent();
               } else {
                 setStudentData(null);
@@ -141,64 +139,59 @@ export default function Dashboard() {
 
               // Fetch additional data for teacher/admin roles
               if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
-                // Fetch students
-                const studentsSnapshot = getDocs(collection(db, "users",currentUser.uid,"students")).then((snapshot) => {
-                  const studentsList = snapshot.docs.map((doc) => ({
-                    id: doc.id,
-                    ...doc.data(),
-                    transactions: doc.data().transactions || [],
-                    notifications: doc.data().notifications || [],
-                  } as StudentData));
-                  setAllStudents(studentsList);
+                // Fetch students from the top-level students collection
+                const studentsSnapshot = await getDocs(collection(db, "students"));
+                const studentsList = studentsSnapshot.docs.map((doc) => ({
+                  id: doc.id,
+                  ...doc.data(),
+                  transactions: doc.data().transactions || [],
+                  notifications: doc.data().notifications || [],
+                } as StudentData));
+                setAllStudents(studentsList);
 
-                  // Set default selected student for teachers
-                  if (fetchedUserData.role === "teacher" && studentsList.length > 0 && !selectedStudentId) {
-                    const assignedStudent = studentsList.find((s) => s.lecturerId === currentUser.uid);
-                    setSelectedStudentId(assignedStudent?.id || null);
-                  }
-                });
+                // Set default selected student for teachers
+                if (fetchedUserData.role === "teacher" && studentsList.length > 0 && !selectedStudentId) {
+                  const assignedStudent = studentsList.find((s) => s.lecturerId === currentUser.uid);
+                  setSelectedStudentId(assignedStudent?.id || studentsList[0]?.id || null);
+                }
 
                 // Fetch lecturers
-                const usersSnapshot = getDocs(collection(db, "users")).then((snapshot) => {
-                  const lecturersList = snapshot.docs
-                    .map((doc) => ({ id: doc.id, ...doc.data() } as User))
-                    .filter((u) => u.role === "teacher");
-                  setAllLecturers(lecturersList);
-                });
+                const usersSnapshot = await getDocs(collection(db, "users"));
+                const lecturersList = usersSnapshot.docs
+                  .map((doc) => ({ id: doc.id, ...doc.data() } as User))
+                  .filter((u) => u.role === "teacher");
+                setAllLecturers(lecturersList);
 
                 // Fetch courses
-                const coursesSnapshot = getDocs(collection(db, "courses")).then(async (snapshot) => {
-                  const coursesList = await Promise.all(
-                    snapshot.docs.map(async (courseDoc) => {
-                      const courseData = courseDoc.data() as Omit<Course, "id" | "resources" | "tests">;
-                      const resourcesSnapshot = await getDocs(collection(db, "courses", courseDoc.id, "resources"));
-                      const testsSnapshot = await getDocs(collection(db, "courses", courseDoc.id, "tests"));
-                      const resources = resourcesSnapshot.docs.map((doc) => ({
-                        id: doc.id,
-                        ...doc.data(),
-                      } as Resource));
-                      const tests = await Promise.all(
-                        testsSnapshot.docs.map(async (testDoc) => {
-                          const testData = testDoc.data() as Omit<Test, "id">;
-                          if (fetchedUserData.role === "student") {
-                            const responseSnap = await getDoc(
-                              doc(db, "courses", courseDoc.id, "tests", testDoc.id, "responses", currentUser.uid)
-                            );
-                            const response = responseSnap.exists() ? (responseSnap.data() as TestResponse) : null;
-                            if (response) {
-                              setTestResponses((prev) => ({ ...prev, [testDoc.id]: response }));
-                            }
+                const coursesSnapshot = await getDocs(collection(db, "courses"));
+                const coursesList = await Promise.all(
+                  coursesSnapshot.docs.map(async (courseDoc) => {
+                    const courseData = courseDoc.data() as Omit<Course, "id" | "resources" | "tests">;
+                    const resourcesSnapshot = await getDocs(collection(db, "courses", courseDoc.id, "resources"));
+                    const testsSnapshot = await getDocs(collection(db, "courses", courseDoc.id, "tests"));
+                    const resources = resourcesSnapshot.docs.map((doc) => ({
+                      id: doc.id,
+                      ...doc.data(),
+                    } as Resource));
+                    const tests = await Promise.all(
+                      testsSnapshot.docs.map(async (testDoc) => {
+                        const testData = testDoc.data() as Omit<Test, "id">;
+                        if (fetchedUserData.role === "student") {
+                          const responseSnap = await getDoc(
+                            doc(db, "courses", courseDoc.id, "tests", testDoc.id, "responses", currentUser.uid)
+                          );
+                          const response = responseSnap.exists() ? (responseSnap.data() as TestResponse) : null;
+                          if (response) {
+                            setTestResponses((prev) => ({ ...prev, [testDoc.id]: response }));
                           }
-                          return { id: testDoc.id, ...testData } as Test;
-                        })
-                      );
-                      return { id: courseDoc.id, ...courseData, resources, tests } as Course;
-                    })
-                  );
-                  setAllCourses(coursesList);
-                });
-
-                await Promise.all([studentsSnapshot, usersSnapshot, coursesSnapshot]);
+                        }
+                        return { id: testDoc.id, ...testData } as Test;
+                      })
+                    );
+                    return { id: courseDoc.id, ...courseData, resources, tests } as Course;
+                  })
+                );
+                setAllCourses(coursesList);
               }
             } else {
               setError("User profile not found. Please contact support.");
@@ -473,7 +466,6 @@ export default function Dashboard() {
       alert("Please fill in all resource fields and select a course.");
       return;
     }
-    // Basic URL validation
     try {
       new URL(newResource.url);
     } catch {
@@ -488,7 +480,7 @@ export default function Dashboard() {
         type: newResource.type,
         url: newResource.url,
         uploadDate: new Date().toISOString(),
-        courseId: newResource.courseId, // Include courseId
+        courseId: newResource.courseId,
       };
       await setDoc(resourceRef, newResourceData);
       setAllCourses((prev) =>
@@ -509,7 +501,6 @@ export default function Dashboard() {
       alert("Please select a course and enter a test title.");
       return;
     }
-    // Validate questions
     for (const q of newTest.questions) {
       if (!q.question || !q.correctAnswer) {
         alert("All questions must have a question text and a correct answer.");
@@ -833,6 +824,7 @@ export default function Dashboard() {
                                                     type="radio"
                                                     name={`${test.id}-${idx}`}
                                                     value={opt}
+
                                                     checked={testResponses[test.id]?.answers?.[idx] === opt}
                                                     onChange={(e) => handleTestAnswerChange(test.id, idx, e.target.value)}
                                                     className="mr-2"
@@ -1115,20 +1107,18 @@ export default function Dashboard() {
                         className="w-full p-2 border rounded text-red-800"
                       >
                         <option value="">Select a student</option>
-                        {allStudents
-                          .filter((s) => s.lecturerId === user?.uid)
-                          .map((s) => (
-                            <option key={s.id} value={s.id}>
-                              {s.name}
-                            </option>
-                          ))}
+                        {allStudents.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
                       </select>
                     ) : (
-                      <p className="text-red-800">No students assigned to you yet.</p>
+                      <p className="text-red-800">No students available.</p>
                     )}
                     {selectedStudentId &&
                       allStudents
-                        .filter((s) => s.id === selectedStudentId && s.lecturerId === user?.uid)
+                        .filter((s) => s.id === selectedStudentId)
                         .map((s) => (
                           <div key={s.id} className="mt-4">
                             <p className="text-lg font-medium text-red-800 mb-2">{s.name}</p>
