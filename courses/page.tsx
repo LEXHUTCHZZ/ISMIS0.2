@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db } from "../lib/firebase";
+import { auth, db } from "C:/Users/lexhu/Desktop/git ismis/ISMIS0.2/lib/firebase"; // Adjusted the path to match the correct location of your firebase configuration file
 import { onAuthStateChanged } from "firebase/auth";
 import {
   doc,
@@ -23,11 +23,11 @@ import {
   Transaction,
   Notification,
   UserData,
-} from "../models";
+} from "../models"; // Adjusted the path to match the correct location
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import CheckoutPage from "../components/CheckoutPage";
-import { markNotificationAsRead } from "../utils/utils";
+import { markNotificationAsRead } from "../utils/utils"; // Adjusted the path to match the correct location
 
 export default function CoursePage() {
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -70,7 +70,7 @@ export default function CoursePage() {
         setUserData(fetchedUserData);
         const hour = new Date().getHours();
         setGreeting(
-          hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Night"
+          hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening"
         );
 
         // Fetch student data for students
@@ -167,7 +167,7 @@ export default function CoursePage() {
             subjects: doc.data().subjects || [],
             resources: doc.data().resources || [],
             tests: doc.data().tests || [],
-            coursework: doc.data().coursework || [], // Ensure coursework is initialized
+            coursework: doc.data().coursework || [],
           })) as Course[];
           setAllCourses(coursesList);
         }
@@ -201,9 +201,9 @@ export default function CoursePage() {
     setAllStudents((prev) =>
       prev.map((s) => {
         if (s.id === studentId) {
-          const updatedCourses = s.courses.map((c: Course) => {
+          const updatedCourses = s.courses.map((c) => {
             if (c.name === courseName) {
-              const updatedSubjects = c.subjects.map((sub: Subject) => {
+              const updatedSubjects = c.subjects?.map((sub) => {
                 if (sub.name === subjectName) {
                   const updatedGrades = { ...sub.grades, [field]: value };
                   const classworkKeys = Object.keys(updatedGrades).filter((k) =>
@@ -223,7 +223,7 @@ export default function CoursePage() {
                 }
                 return sub;
               });
-              return { ...c, subjects: updatedSubjects };
+              return { ...c, subjects: updatedSubjects || [] };
             }
             return c;
           });
@@ -277,8 +277,8 @@ export default function CoursePage() {
   const handlePaymentSuccess = async (amount: number) => {
     if (!studentData || !user) return;
     try {
-      const updatedBalance = studentData.balance - amount;
-      const updatedTotalPaid = studentData.totalPaid + amount;
+      const updatedBalance = (studentData.balance || 0) - amount;
+      const updatedTotalPaid = (studentData.totalPaid || 0) + amount;
       const paymentStatus = updatedBalance <= 0 ? "Paid" : "Partial";
       const newTransaction: Transaction = {
         id: new Date().toISOString(),
@@ -311,8 +311,8 @@ export default function CoursePage() {
     const isAlreadyEnrolled = studentData.courses.some((c) => c.id === course.id);
     if (isAlreadyEnrolled) return alert("You are already enrolled in this course!");
     const updatedCourses = [...studentData.courses, course];
-    const updatedTotalOwed = studentData.totalOwed + course.fee;
-    const updatedBalance = studentData.balance + course.fee;
+    const updatedTotalOwed = (studentData.totalOwed || 0) + (course.fee || 0);
+    const updatedBalance = (studentData.balance || 0) + (course.fee || 0);
     try {
       await updateDoc(doc(db, "students", user.uid), {
         courses: updatedCourses,
@@ -341,11 +341,11 @@ export default function CoursePage() {
     const studentToUpdate = allStudents.find((s) => s.id === studentId);
     if (!studentToUpdate) return;
 
-    const updatedCourses = studentToUpdate.courses.map((c: Course) => {
+    const updatedCourses = studentToUpdate.courses.map((c) => {
       if (c.name === courseName) {
         return {
           ...c,
-          subjects: [...c.subjects, { name: subjectName, grades: {} }],
+          subjects: [...(c.subjects || []), { name: subjectName, grades: {} }],
         };
       }
       return c;
@@ -449,9 +449,9 @@ export default function CoursePage() {
 
     const data = allStudents.map((s) => [
       s.name || "N/A",
-      s.totalOwed.toLocaleString() || "0",
-      s.totalPaid.toLocaleString() || "0",
-      s.balance.toLocaleString() || "0",
+      (s.totalOwed || 0).toLocaleString(),
+      (s.totalPaid || 0).toLocaleString(),
+      (s.balance || 0).toLocaleString(),
       s.paymentStatus || "N/A",
     ]);
 
@@ -554,7 +554,7 @@ export default function CoursePage() {
                       Notifications
                     </h3>
                     {studentData.notifications.length ? (
-                      studentData.notifications.map((notif: Notification) => (
+                      studentData.notifications.map((notif) => (
                         <div
                           key={notif.id}
                           className="flex justify-between items-center mb-2"
@@ -597,12 +597,12 @@ export default function CoursePage() {
                       Your Grades
                     </h3>
                     {studentData.courses.length ? (
-                      studentData.courses.map((c: Course) => (
+                      studentData.courses.map((c) => (
                         <div key={c.id} className="mb-4">
                           <p className="text-red-800 font-medium">
-                            {c.name} (Fee: {c.fee.toLocaleString()} JMD)
+                            {c.name} (Fee: {(c.fee || 0).toLocaleString()} JMD)
                           </p>
-                          {c.subjects.length ? (
+                          {(c.subjects || []).length ? (
                             <table className="w-full mt-2 border-collapse">
                               <thead>
                                 <tr className="bg-red-800 text-white">
@@ -613,7 +613,7 @@ export default function CoursePage() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {c.subjects.map((sub: Subject) => (
+                                {(c.subjects || []).map((sub) => (
                                   <tr key={sub.name}>
                                     <td className="p-2 border text-red-800">
                                       {sub.name || "N/A"}
@@ -621,7 +621,7 @@ export default function CoursePage() {
                                     <td className="p-2 border text-red-800">
                                       {Object.keys(sub.grades || {})
                                         .filter((k) => k.startsWith("C"))
-                                        .map((k) => sub.grades![k] || "N/A")
+                                        .map((k) => sub.grades?.[k] || "N/A")
                                         .join(", ")}
                                     </td>
                                     <td className="p-2 border text-red-800">
@@ -653,7 +653,7 @@ export default function CoursePage() {
                       Payments
                     </h3>
                     <p className="text-red-800">
-                      Balance: {studentData.balance.toLocaleString()} JMD
+                      Balance: {(studentData.balance || 0).toLocaleString()} JMD
                     </p>
                     <p className="text-red-800">Status: {studentData.paymentStatus}</p>
                     <p className="text-red-800">
@@ -664,7 +664,7 @@ export default function CoursePage() {
                         Transaction History
                       </h4>
                       {studentData.transactions.length ? (
-                        studentData.transactions.map((txn: Transaction) => (
+                        studentData.transactions.map((txn) => (
                           <p key={txn.id} className="text-red-800">
                             {new Date(txn.date).toLocaleString()}:{" "}
                             {txn.amount.toLocaleString()} JMD - {txn.status}
@@ -674,9 +674,10 @@ export default function CoursePage() {
                         <p className="text-red-800">No transactions.</p>
                       )}
                     </div>
-                    {studentData.balance > 0 && (
+                    {(studentData.balance || 0) > 0 && (
                       <CheckoutPage
-                        balance={studentData.balance} // Pass balance prop
+                        studentId={studentData.id}
+                        balance={studentData.balance || 0}
                         onPaymentSuccess={handlePaymentSuccess}
                       />
                     )}
@@ -688,10 +689,10 @@ export default function CoursePage() {
                       Enroll in Courses
                     </h3>
                     {allCourses.length ? (
-                      allCourses.map((course: Course) => (
+                      allCourses.map((course) => (
                         <div key={course.id} className="mb-2 flex justify-between items-center">
                           <p className="text-red-800">
-                            {course.name} (Fee: {course.fee.toLocaleString()} JMD)
+                            {course.name} (Fee: {(course.fee || 0).toLocaleString()} JMD)
                           </p>
                           <button
                             onClick={() => handleEnrollCourse(course)}
@@ -720,15 +721,15 @@ export default function CoursePage() {
                 Manage Student Grades
               </h3>
               {allStudents.length ? (
-                allStudents.map((s: StudentData) => (
+                allStudents.map((s) => (
                   <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
                     <p className="text-lg font-medium text-red-800 mb-2">
                       {s.name || "Unnamed"}
                     </p>
-                    {s.courses.map((c: Course) => (
+                    {s.courses.map((c) => (
                       <div key={c.id} className="mb-4">
                         <p className="text-red-800 font-medium">{c.name}</p>
-                        {c.subjects.length ? (
+                        {(c.subjects || []).length ? (
                           <table className="w-full mt-2 border-collapse">
                             <thead>
                               <tr className="bg-red-800 text-white">
@@ -740,7 +741,7 @@ export default function CoursePage() {
                               </tr>
                             </thead>
                             <tbody>
-                              {c.subjects.map((sub: Subject) => (
+                              {(c.subjects || []).map((sub) => (
                                 <tr key={sub.name}>
                                   <td className="p-2 border text-red-800">
                                     {sub.name || "N/A"}
@@ -855,7 +856,7 @@ export default function CoursePage() {
                 <p className="text-red-800">
                   Total Revenue:{" "}
                   {allStudents
-                    .reduce((sum, s) => sum + s.totalPaid, 0)
+                    .reduce((sum, s) => sum + (s.totalPaid || 0), 0)
                     .toLocaleString()}{" "}
                   JMD
                 </p>
@@ -951,13 +952,13 @@ export default function CoursePage() {
 
               {/* Manage Students */}
               {allStudents.length ? (
-                allStudents.map((s: StudentData) => (
+                allStudents.map((s) => (
                   <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
                     <p className="text-lg font-medium text-red-800 mb-2">
                       {s.name || "Unnamed"}
                     </p>
                     <p className="text-red-800">
-                      Balance: {s.balance.toLocaleString()} JMD
+                      Balance: {(s.balance || 0).toLocaleString()} JMD
                     </p>
                     <p className="text-red-800">
                       Clearance: {s.clearance ? "Yes" : "No"}
@@ -965,10 +966,10 @@ export default function CoursePage() {
 
                     {/* Grades Management */}
                     {s.courses.length ? (
-                      s.courses.map((c: Course) => (
+                      s.courses.map((c) => (
                         <div key={c.id} className="mb-4">
                           <p className="text-red-800 font-medium">{c.name}</p>
-                          {c.subjects.length ? (
+                          {c.subjects?.length ? (
                             <table className="w-full mt-2 border-collapse">
                               <thead>
                                 <tr className="bg-red-800 text-white">
@@ -980,7 +981,7 @@ export default function CoursePage() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {c.subjects.map((sub: Subject) => (
+                                {c.subjects.map((sub) => (
                                   <tr key={sub.name}>
                                     <td className="p-2 border text-red-800">
                                       {sub.name || "N/A"}
@@ -1135,19 +1136,19 @@ export default function CoursePage() {
                 Download Financial Report
               </button>
               {allStudents.length ? (
-                allStudents.map((s: StudentData) => (
+                allStudents.map((s) => (
                   <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
                     <p className="text-lg font-medium text-red-800 mb-2">
                       {s.name || "Unnamed"}
                     </p>
                     <p className="text-red-800">
-                      Total Owed: {s.totalOwed.toLocaleString()} JMD
+                      Total Owed: {(s.totalOwed || 0).toLocaleString()} JMD
                     </p>
                     <p className="text-red-800">
-                      Total Paid: {s.totalPaid.toLocaleString()} JMD
+                      Total Paid: {(s.totalPaid || 0).toLocaleString()} JMD
                     </p>
                     <p className="text-red-800">
-                      Balance: {s.balance.toLocaleString()} JMD
+                      Balance: {(s.balance || 0).toLocaleString()} JMD
                     </p>
                     <p className="text-red-800">Status: {s.paymentStatus}</p>
                     <p className="text-red-800">
@@ -1156,7 +1157,7 @@ export default function CoursePage() {
                     <div className="mt-2">
                       <h4 className="text-red-800 font-medium">Transactions</h4>
                       {s.transactions.length ? (
-                        s.transactions.map((txn: Transaction) => (
+                        s.transactions.map((txn) => (
                           <p key={txn.id} className="text-red-800">
                             {new Date(txn.date).toLocaleString()}:{" "}
                             {txn.amount.toLocaleString()} JMD - {txn.status}

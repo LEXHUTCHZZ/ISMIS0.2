@@ -15,16 +15,18 @@ const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
   : null;
 
 interface CheckoutPageProps {
-  balance: number;
-  onPaymentSuccess: (amount: number) => void;
+  studentId: string;
+  balance?: number;
+  onPaymentSuccess: (amount: number) => Promise<void>;
 }
 
-const CheckoutForm = ({ balance, onPaymentSuccess }: CheckoutPageProps) => {
-  const [amountJMD, setAmountJMD] = useState<number | "">(balance || "");
+const CheckoutForm = ({ studentId, balance: initialBalance, onPaymentSuccess }: CheckoutPageProps) => {
+  const [amountJMD, setAmountJMD] = useState<number | "">(initialBalance || "");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
   const [exchangeRate, setExchangeRate] = useState(157.19); // Default fallback
+  const [balance, setBalance] = useState(initialBalance || 0);
   const stripe = useStripe();
   const elements = useElements();
   const { user } = useAuth();
@@ -45,12 +47,37 @@ const CheckoutForm = ({ balance, onPaymentSuccess }: CheckoutPageProps) => {
         setExchangeRate(rate);
       } catch (err) {
         console.error("Failed to fetch exchange rate:", err);
-        setError("Couldn’t fetch exchange rate; using default 157.19 JMD/USD.");
+        setError("Couldn't fetch exchange rate; using default 157.19 JMD/USD.");
       }
     };
-    fetchExchangeRate();
-  }, []);
 
+    const fetchStudentBalance = async () => {
+      if (initialBalance !== undefined) return; // Skip if balance was provided as prop
+      
+      try {
+        const studentDoc = doc(db, "students", studentId);
+        const studentSnap = await getDoc(studentDoc);
+        if (studentSnap.exists()) {
+          const studentData = studentSnap.data();
+          const totalOwed = Number(studentData.totalOwed || 0);
+          const totalPaid = Number(studentData.totalPaid || 0);
+          const currentBalance = totalOwed - totalPaid;
+          setBalance(currentBalance);
+          if (currentBalance > 0) {
+            setAmountJMD(currentBalance);
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch student balance:", err);
+        setError("Couldn't fetch student balance. Please try again.");
+      }
+    };
+
+    fetchExchangeRate();
+    fetchStudentBalance();
+  }, [studentId, initialBalance]);
+
+  // Rest of the component remains the same...
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -143,7 +170,7 @@ const CheckoutForm = ({ balance, onPaymentSuccess }: CheckoutPageProps) => {
       if (paymentIntent.status === "succeeded") {
         console.log("Payment succeeded with amount (cents):", paymentIntent.amount);
 
-        const studentDoc = doc(db, "students", user.uid);
+        const studentDoc = doc(db, "students", studentId);
         const studentSnap = await getDoc(studentDoc);
         const studentData = studentSnap.data();
 
@@ -197,7 +224,7 @@ const CheckoutForm = ({ balance, onPaymentSuccess }: CheckoutPageProps) => {
         }
 
         setPaymentSuccess(true);
-        onPaymentSuccess(amountJMD);
+        await onPaymentSuccess(amountJMD);
       }
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || "Payment failed.");
@@ -292,13 +319,13 @@ const CheckoutForm = ({ balance, onPaymentSuccess }: CheckoutPageProps) => {
   );
 };
 
-export default function CheckoutPage({ balance, onPaymentSuccess }: CheckoutPageProps) {
+export default function CheckoutPage({ studentId, balance, onPaymentSuccess }: CheckoutPageProps) {
   if (!stripePromise) {
     return <p style={{ color: "#7F1D1D" }}>Payment system unavailable. Please contact support.</p>;
   }
   return (
     <Elements stripe={stripePromise}>
-      <CheckoutForm balance={balance} onPaymentSuccess={onPaymentSuccess} />
+      <CheckoutForm studentId={studentId} balance={balance} onPaymentSuccess={onPaymentSuccess} />
     </Elements>
   );
 }

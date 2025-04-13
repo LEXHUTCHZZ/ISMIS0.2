@@ -77,6 +77,14 @@ export interface Course {
   coursework: Coursework[]; // Add this line
 }
 
+
+export interface Course {
+  id: string;
+  name: string;
+  description?: string; // Added description property
+  
+}
+
 export interface Resource {
   id: string;
   name: string;
