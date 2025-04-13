@@ -107,7 +107,7 @@ export default function Dashboard() {
     return "Good Night";
   }, []);
 
-  // Fetch data with proper cleanup
+  // Fetch data with proper cleanup and real-time notification listening
   useEffect(() => {
     if (!user) {
       router.push("/auth/login");
@@ -136,8 +136,9 @@ export default function Dashboard() {
           setUsername(data.name || "Unnamed");
           setGreeting(greetingText);
 
-          // Fetch student data for student/teacher roles
+          // Fetch student data and listen for notifications
           let unsubscribeStudent: (() => void) | undefined;
+          let unsubscribeNotifications: (() => void) | undefined;
           if (hasPermission(data.role as Role, ["student", "teacher"])) {
             const studentDoc = doc(db, "students", currentUser.uid);
             unsubscribeStudent = onSnapshot(studentDoc, (snap) => {
@@ -153,6 +154,20 @@ export default function Dashboard() {
               }
               setLoading(false);
             });
+
+            // Real-time listener for notifications
+            if (data.role === "student") {
+              const notificationsCollection = collection(db, "students", currentUser.uid, "notifications");
+              unsubscribeNotifications = onSnapshot(notificationsCollection, (snapshot) => {
+                const notifications = snapshot.docs.map((doc) => ({
+                  id: doc.id,
+                  ...doc.data(),
+                })) as Notification[];
+                setStudentData((prev) =>
+                  prev ? { ...prev, notifications: notifications || [] } : prev
+                );
+              });
+            }
           }
 
           // Fetch additional data for teacher/admin/accountsadmin
@@ -244,10 +259,11 @@ export default function Dashboard() {
             setLoading(false);
           }
 
-          // Cleanup user listener and conditionally student listener
+          // Cleanup listeners
           return () => {
             unsubscribeUser();
             if (unsubscribeStudent) unsubscribeStudent();
+            if (unsubscribeNotifications) unsubscribeNotifications();
           };
         });
       } catch (e) {
@@ -258,7 +274,7 @@ export default function Dashboard() {
 
     // Cleanup auth listener
     return () => unsubscribeAuth();
-  }, [user, router, greetingText, setUserData, setRole, setUsername, setGreeting, setStudentData, setAllStudents, setAllLecturers, setAllCourses, setTestResponses, setSubmissions, setLoading, setError]);
+  }, [user, router, greetingText]);
 
   const calculateCourseAverage = (subjects: Subject[] = []): string => {
     const grades = subjects
@@ -372,10 +388,10 @@ export default function Dashboard() {
             ...(prev.courses || []),
             {
               ...newCourse,
-              id: "", // Provide a valid ID
-              resources: [], // Initialize resources
-              tests: [], // Initialize tests
-              coursework: [], // Initialize coursework
+              id: "",
+              resources: [],
+              tests: [],
+              coursework: [],
             },
           ],
         }
@@ -448,7 +464,7 @@ export default function Dashboard() {
   };
 
   const handleAddStudent = async () => {
-    if (role && hasPermission(role, ["admin"])) {
+    if (role && !hasPermission(role, ["admin"])) {
       alert("Permission denied");
       return;
     }
@@ -501,6 +517,7 @@ export default function Dashboard() {
         read: false,
       };
       const docRef = await addDoc(ref, notif);
+      // Update local state immediately
       setAllStudents((prev) =>
         prev.map((s) =>
           s.id === studentId
@@ -555,7 +572,7 @@ export default function Dashboard() {
       };
       await setDoc(doc(db, "courses", courseId, "tests", testId, "responses", user.uid), response);
       setTestResponses((prev) => ({ ...prev, [testId]: response }));
-      alert(`Testsubmitted! Score: ${response.score.toFixed(2)}%`);
+      alert(`Test submitted! Score: ${response.score.toFixed(2)}%`);
     } catch (e) {
       alert("Failed to submit test: " + (e instanceof Error ? e.message : "Unknown error"));
     }
@@ -566,8 +583,8 @@ export default function Dashboard() {
       alert("Permission denied");
       return;
     }
-    if (!selectedCourseName || !newResource.name || !newResource.type || !newResource.url) {
-      alert("Please select a course and fill all resource fields");
+    if (!newResource.name || !newResource.type || !newResource.url) {
+      alert("Please fill all resource fields");
       return;
     }
     if (!isValidUrl(newResource.url)) {
@@ -575,11 +592,13 @@ export default function Dashboard() {
       return;
     }
     try {
-      const course = allCourses.find((c) => c.name === selectedCourseName);
-      if (!course) {
-        alert("Course not found");
+      // Assume resources are uploaded to a default course or handle differently
+      // For simplicity, we'll use the first course available
+      if (!allCourses.length) {
+        alert("No courses available");
         return;
       }
+      const course = allCourses[0]; // Default to first course
       const ref = doc(collection(db, "courses", course.id, "resources"));
       const resource: Resource = {
         id: ref.id,
@@ -610,21 +629,21 @@ export default function Dashboard() {
       return;
     }
     if (
-      !selectedCourseName ||
       !newTest.title ||
       newTest.questions.some(
         (q) => !q.question || !q.correctAnswer || (q.options.length > 1 && q.options.some((o) => !o))
       )
     ) {
-      alert("Please select a course and fill all test fields correctly");
+      alert("Please fill all test fields correctly");
       return;
     }
     try {
-      const course = allCourses.find((c) => c.name === selectedCourseName);
-      if (!course) {
-        alert("Course not found");
+      // Use first course as default
+      if (!allCourses.length) {
+        alert("No courses available");
         return;
       }
+      const course = allCourses[0];
       const ref = doc(collection(db, "courses", course.id, "tests"));
       const test: Test = {
         id: ref.id,
@@ -657,22 +676,22 @@ export default function Dashboard() {
       return;
     }
     if (
-      !selectedCourseName ||
       !newCoursework.title ||
       !newCoursework.description ||
       !newCoursework.dueDate ||
       isNaN(newCoursework.weight) ||
       newCoursework.weight <= 0
     ) {
-      alert("Please select a course and fill all coursework fields correctly");
+      alert("Please fill all coursework fields correctly");
       return;
     }
     try {
-      const course = allCourses.find((c) => c.name === selectedCourseName);
-      if (!course) {
-        alert("Course not found");
+      // Use first course as default
+      if (!allCourses.length) {
+        alert("No courses available");
         return;
       }
+      const course = allCourses[0];
       const ref = doc(collection(db, "courses", course.id, "coursework"));
       const coursework: Coursework = {
         ...newCoursework,
@@ -857,16 +876,24 @@ export default function Dashboard() {
                             {!n.read && n.id && (
                               <button
                                 onClick={() =>
-                                  user && markNotificationAsRead(user.uid, n.id).then(() =>
-                                    setStudentData((prev) =>
-                                      prev && {
-                                        ...prev,
-                                        notifications: prev.notifications.map((x) =>
-                                          x.id === n.id ? { ...x, read: true } : x
-                                        ),
-                                      }
+                                  user &&
+                                  markNotificationAsRead(user.uid, n.id)
+                                    .then(() =>
+                                      setStudentData((prev) =>
+                                        prev && {
+                                          ...prev,
+                                          notifications: prev.notifications.map((x) =>
+                                            x.id === n.id ? { ...x, read: true } : x
+                                          ),
+                                        }
+                                      )
                                     )
-                                  ).catch(e => alert("Failed to mark as read: " + (e instanceof Error ? e.message : "Unknown error")))
+                                    .catch((e) =>
+                                      alert(
+                                        "Failed to mark as read: " +
+                                          (e instanceof Error ? e.message : "Unknown error")
+                                      )
+                                    )
                                 }
                                 className="text-red-800 hover:underline"
                               >
@@ -1141,18 +1168,7 @@ export default function Dashboard() {
                 <div className="space-y-8">
                   <div className="bg-white p-6 rounded shadow">
                     <h3 className="text-xl font-semibold text-red-800 mb-4">Upload Resources</h3>
-                    <select
-                      value={selectedCourseName || ""}
-                      onChange={(e) => setSelectedCourseName(e.target.value || null)}
-                      className="w-full p-3 border rounded text-red-800 mb-4"
-                    >
-                      <option value="">Select Course</option>
-                      {allCourses.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Removed course dropdown; resources now use first available course */}
                     <select
                       value={newResource.type}
                       onChange={(e) => setNewResource({ ...newResource, type: e.target.value })}
@@ -1186,18 +1202,7 @@ export default function Dashboard() {
                   </div>
                   <div className="bg-white p-6 rounded shadow">
                     <h3 className="text-xl font-semibold text-red-800 mb-4">Upload Coursework</h3>
-                    <select
-                      value={selectedCourseName || ""}
-                      onChange={(e) => setSelectedCourseName(e.target.value || null)}
-                      className="w-full p-3 border rounded text-red-800 mb-4"
-                    >
-                      <option value="">Select Course</option>
-                      {allCourses.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Removed course dropdown; coursework now uses first available course */}
                     <input
                       type="text"
                       placeholder="Title"
@@ -1276,18 +1281,7 @@ export default function Dashboard() {
                 <div className="space-y-8">
                   <div className="bg-white p-6 rounded shadow">
                     <h3 className="text-xl font-semibold text-red-800 mb-4">Create Tests</h3>
-                    <select
-                      value={selectedCourseName || ""}
-                      onChange={(e) => setSelectedCourseName(e.target.value || null)}
-                      className="w-full p-3 border rounded text-red-800 mb-4"
-                    >
-                      <option value="">Select Course</option>
-                      {allCourses.map((c) => (
-                        <option key={c.id} value={c.name}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
+                    {/* Removed course dropdown; tests now use first available course */}
                     <input
                       type="text"
                       placeholder="Title"
@@ -1701,9 +1695,11 @@ export default function Dashboard() {
                             onChange={async (e) => {
                               try {
                                 await updateDoc(doc(db, "students", s.id), { lecturerId: e.target.value || null });
-                                setAllStudents(prev => prev.map(student => 
-                                  student.id === s.id ? { ...student, lecturerId: e.target.value || null } : student
-                                ));
+                                setAllStudents((prev) =>
+                                  prev.map((student) =>
+                                    student.id === s.id ? { ...student, lecturerId: e.target.value || null } : student
+                                  )
+                                );
                               } catch (e) {
                                 alert("Failed to update lecturer: " + (e instanceof Error ? e.message : "Unknown error"));
                               }
