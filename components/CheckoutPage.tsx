@@ -9,15 +9,22 @@ import { db } from "../lib/firebase";
 import { doc, getDoc, updateDoc, collection, addDoc } from "firebase/firestore";
 import { useAuth } from "../contexts/AuthContext";
 
-// Initialize Stripe with your publishable key from .env.local
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || "");
+// Initialize Stripe with validation
+const stripePromise = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  ? loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+  : null;
 
-const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) => {
-  const [amountJMD, setAmountJMD] = useState<number | "">("");
+interface CheckoutPageProps {
+  balance: number;
+  onPaymentSuccess: (amount: number) => void;
+}
+
+const CheckoutForm = ({ balance, onPaymentSuccess }: CheckoutPageProps) => {
+  const [amountJMD, setAmountJMD] = useState<number | "">(balance || "");
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [paymentSuccess, setPaymentSuccess] = useState(false);
-  const [exchangeRate, setExchangeRate] = useState(157.19);
+  const [exchangeRate, setExchangeRate] = useState(157.19); // Default fallback
   const stripe = useStripe();
   const elements = useElements();
   const { user } = useAuth();
@@ -30,7 +37,7 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
       try {
         const response = await fetch("https://api.exchangerate-api.com/v4/latest/USD");
         const data = await response.json();
-        if (!data.rates || !data.rates.JMD) {
+        if (!data.rates?.JMD) {
           throw new Error("Invalid exchange rate data");
         }
         const rate = data.rates.JMD;
@@ -47,18 +54,23 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!stripe || !elements) {
-      setError("Payment system not loaded. Please try again.");
+    if (!stripe || !elements || !stripePromise) {
+      setError("Payment system not loaded. Please check configuration.");
       return;
     }
 
-    if (!user) {
+    if (!user?.uid) {
       setError("User not authenticated. Please log in.");
       return;
     }
 
     if (!amountJMD || amountJMD <= 0) {
       setError("Please enter a valid amount greater than 0 JMD.");
+      return;
+    }
+
+    if (amountJMD > balance) {
+      setError(`Amount exceeds balance of ${balance.toLocaleString()} JMD.`);
       return;
     }
 
@@ -141,25 +153,28 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
           return;
         }
 
-        const newTotalPaid = (studentData.totalPaid || 0) + amountJMD;
-        const balance = studentData.totalOwed - newTotalPaid;
+        const totalPaid = Number(studentData.totalPaid || 0);
+        const totalOwed = Number(studentData.totalOwed || 0);
+        const newTotalPaid = totalPaid + amountJMD;
+        const balance = totalOwed - newTotalPaid;
         const paymentStatus = balance <= 0 ? "Paid" : newTotalPaid > 0 ? "Partially Paid" : "Unpaid";
         const paymentPlan = studentData.paymentPlan || { installments: [] };
 
         let remainingPayment = amountJMD;
-        const updatedInstallments = paymentPlan.installments.map((inst: any) => {
-          if (remainingPayment >= inst.amount && !inst.paid) {
+        const updatedInstallments = (paymentPlan.installments || []).map((inst: any) => {
+          if (!inst || typeof inst.amount !== "number" || inst.paid) return inst;
+          if (remainingPayment >= inst.amount) {
             remainingPayment -= inst.amount;
             return { ...inst, paid: true };
           }
           return inst;
         });
 
-        const firstInstallmentPaid = updatedInstallments.length > 0 && updatedInstallments[0].paid && !studentData.clearance;
+        const firstInstallmentPaid = updatedInstallments.length > 0 && updatedInstallments[0]?.paid && !studentData.clearance;
 
         // Save transaction to Firestore
         const transactionRef = collection(studentDoc, "transactions");
-        await addDoc(transactionRef, {
+        const transactionDoc = await addDoc(transactionRef, {
           amount: amountJMD,
           date: new Date().toISOString(),
           paymentIntentId: paymentIntent.id,
@@ -182,10 +197,7 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
         }
 
         setPaymentSuccess(true);
-
-        if (onPaymentSuccess) {
-          onPaymentSuccess();
-        }
+        onPaymentSuccess(amountJMD);
       }
     } catch (err: any) {
       setError(err.response?.data?.error || err.message || "Payment failed.");
@@ -194,14 +206,18 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1rem" }} aria-labelledby="payment-form">
       <div>
-        <label style={{ fontSize: "1rem", fontWeight: "600", color: "#7F1D1D", display: "block", marginBottom: "0.5rem" }}>
+        <label
+          htmlFor="amount-jmd"
+          style={{ fontSize: "1rem", fontWeight: "600", color: "#7F1D1D", display: "block", marginBottom: "0.5rem" }}
+        >
           Amount in JMD
         </label>
         <input
+          id="amount-jmd"
           type="number"
-          placeholder="Enter amount in JMD (e.g., 1000)"
+          placeholder={`Enter amount up to ${balance.toLocaleString()} JMD`}
           value={amountJMD}
           onChange={(e) => {
             const value = e.target.value === "" ? "" : parseFloat(e.target.value);
@@ -209,8 +225,10 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
           }}
           step="1"
           min="0"
+          max={balance}
           style={{ width: "100%", padding: "0.75rem", border: "1px solid #7F1D1D", borderRadius: "4px", color: "#7F1D1D" }}
           disabled={isProcessing || paymentSuccess}
+          aria-describedby={error ? "amount-error" : undefined}
         />
       </div>
       {amountJMD && !isProcessing && !paymentSuccess && (
@@ -219,10 +237,16 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
         </p>
       )}
       <div>
-        <label style={{ fontSize: "1rem", fontWeight: "600", color: "#7F1D1D", display: "block", marginBottom: "0.5rem" }}>
+        <label
+          htmlFor="card-element"
+          style={{ fontSize: "1rem", fontWeight: "600", color: "#7F1D1D", display: "block", marginBottom: "0.5rem" }}
+        >
           Card Information
         </label>
-        <div style={{ border: "1px solid #7F1D1D", borderRadius: "4px", padding: "0.75rem", backgroundColor: "#FFFFFF" }}>
+        <div
+          style={{ border: "1px solid #7F1D1D", borderRadius: "4px", padding: "0.75rem", backgroundColor: "#FFFFFF" }}
+          id="card-element"
+        >
           <CardElement
             options={{
               style: {
@@ -237,7 +261,11 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
           />
         </div>
       </div>
-      {error && <p style={{ color: "#7F1D1D", fontSize: "0.875rem" }}>{error}</p>}
+      {error && (
+        <p id="amount-error" style={{ color: "#7F1D1D", fontSize: "0.875rem" }} role="alert">
+          {error}
+        </p>
+      )}
       <button
         type="submit"
         disabled={isProcessing || paymentSuccess || !stripe || !elements || !amountJMD}
@@ -250,6 +278,7 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
           border: "none",
           cursor: isProcessing || paymentSuccess || !stripe || !elements || !amountJMD ? "not-allowed" : "pointer",
         }}
+        aria-disabled={isProcessing || paymentSuccess || !stripe || !elements || !amountJMD}
       >
         {isProcessing
           ? "Processing..."
@@ -263,10 +292,13 @@ const CheckoutForm = ({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) =
   );
 };
 
-export default function CheckoutPage({ onPaymentSuccess }: { onPaymentSuccess?: () => void }) {
+export default function CheckoutPage({ balance, onPaymentSuccess }: CheckoutPageProps) {
+  if (!stripePromise) {
+    return <p style={{ color: "#7F1D1D" }}>Payment system unavailable. Please contact support.</p>;
+  }
   return (
     <Elements stripe={stripePromise}>
-      <CheckoutForm onPaymentSuccess={onPaymentSuccess} />
+      <CheckoutForm balance={balance} onPaymentSuccess={onPaymentSuccess} />
     </Elements>
   );
 }
