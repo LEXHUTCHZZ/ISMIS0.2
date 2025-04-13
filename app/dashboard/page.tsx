@@ -91,7 +91,8 @@ export default function Dashboard() {
     const hour = new Date().getHours();
     if (hour < 12) return "Good Morning 🌞";
     if (hour < 18) return "Good Afternoon ⛅";
-    return "Good Evening 🌙";
+    if (hour < 22) return "Good Evening 🌙";
+    return "Good Night 🌟";
   }, []);
 
   // Fetch data with real-time listeners
@@ -109,8 +110,9 @@ export default function Dashboard() {
       }
 
       try {
-        let unsubscribeNotifications: (() => void) | undefined; // Declare unsubscribeNotifications in the outer scope
         const userDoc = doc(db, "users", currentUser.uid);
+        let unsubscribeNotifications: (() => void) | undefined; // Declare unsubscribeNotifications
+        let unsubscribeStudent: (() => void) | undefined; // Move declaration to outer scope
         const unsubscribeUser = onSnapshot(userDoc, async (snap) => {
           if (!snap.exists()) {
             setError("User not found");
@@ -125,7 +127,6 @@ export default function Dashboard() {
           setLoading(false);
 
           // Fetch student data and notifications
-          let unsubscribeStudent: (() => void) | undefined;
           let unsubscribeNotifications: (() => void) | undefined;
           if (hasPermission(data.role as Role, ["student", "teacher"])) {
             const studentDoc = doc(db, "students", currentUser.uid);
@@ -236,9 +237,7 @@ export default function Dashboard() {
         });
         return () => {
           unsubscribeUser();
-          if (unsubscribeNotifications) {
-            unsubscribeNotifications();
-          }
+          if (unsubscribeStudent) unsubscribeStudent(); // Now unsubscribeStudent is accessible here
           if (unsubscribeNotifications) unsubscribeNotifications();
         };
       } catch (e) {
@@ -1185,6 +1184,71 @@ export default function Dashboard() {
                               ))}
                           </div>
                         ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {role === "admin" && (
+            <div className="space-y-8">
+              <div className="bg-white p-6 rounded-lg shadow">
+                <h3 className="text-xl font-semibold text-blue-600 mb-4">Admin Dashboard</h3>
+                <p className="text-gray-600 mb-4">Welcome to the Admin Dashboard. Here you can manage all users and courses.</p>
+                <div className="space-y-6">
+                  <div>
+                    <h4 className="text-lg font-medium text-blue-600 mb-3">All Students</h4>
+                    {allStudents.length ? (
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-blue-600 text-white">
+                            <th className="p-2 border">Name</th>
+                            <th className="p-2 border">ID</th>
+                            <th className="p-2 border">Courses</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allStudents.map((s) => (
+                            <tr key={s.id}>
+                              <td className="p-2 border text-gray-600">{s.name}</td>
+                              <td className="p-2 border text-gray-600">{s.id}</td>
+                              <td className="p-2 border text-gray-600">
+                                {s.courses?.map((c) => c.name).join(", ") || "None"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="text-gray-600">No students found.</p>
+                    )}
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-medium text-blue-600 mb-3">All Courses</h4>
+                    {allCourses.length ? (
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-blue-600 text-white">
+                            <th className="p-2 border">Name</th>
+                            <th className="p-2 border">ID</th>
+                            <th className="p-2 border">Resources</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {allCourses.map((c) => (
+                            <tr key={c.id}>
+                              <td className="p-2 border text-gray-600">{c.name}</td>
+                              <td className="p-2 border text-gray-600">{c.id}</td>
+                              <td className="p-2 border text-gray-600">
+                                {c.resources?.length || 0} resource(s)
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="text-gray-600">No courses found.</p>
+                    )}
                   </div>
                 </div>
               </div>
