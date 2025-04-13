@@ -616,7 +616,7 @@ export default function Dashboard() {
               {greeting}, {username}!
             </h1>
 
-            {/* STUDENT DASHBOARD */}
+            {/* STUDENT DASHBOARD - ONLY THIS SECTION HAS BEEN MODIFIED */}
             {role === "student" && studentData && (
               <div className="space-y-6">
                 {/* Payment Section */}
@@ -636,10 +636,12 @@ export default function Dashboard() {
                       <p className="text-lg font-bold">${(studentData.balance || 0).toFixed(2)}</p>
                     </div>
                   </div>
-                  <CheckoutPage 
-                    studentId={user?.uid || ""} 
-                    onPaymentSuccess={handlePaymentSuccess} 
-                  />
+                  {studentData.balance > 0 && (
+                    <CheckoutPage 
+                      studentId={user?.uid || ""} 
+                      onPaymentSuccess={handlePaymentSuccess} 
+                    />
+                  )}
                 </div>
 
                 {/* Courses and Grades */}
@@ -647,7 +649,7 @@ export default function Dashboard() {
                   <h2 className="text-xl font-semibold text-red-800 mb-4">Your Courses</h2>
                   {studentData.courses?.length ? (
                     studentData.courses.map((course) => (
-                      <div key={course.id} className="mb-6">
+                      <div key={course.id} className="mb-6 border-b pb-4">
                         <h3 className="text-lg font-medium text-red-800">{course.name}</h3>
                         
                         {/* Resources */}
@@ -714,15 +716,17 @@ export default function Dashboard() {
                 </div>
 
                 {/* Notifications */}
-                {studentData.notifications?.length > 0 && (
-                  <div className="bg-white p-6 rounded-lg shadow">
-                    <h2 className="text-xl font-semibold text-red-800 mb-4">Notifications</h2>
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h2 className="text-xl font-semibold text-red-800 mb-4">Notifications</h2>
+                  {studentData.notifications?.length ? (
                     <NotificationList
                       notifications={studentData.notifications}
                       onMarkAsRead={handleMarkNotificationAsRead}
                     />
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-gray-600">No notifications</p>
+                  )}
+                </div>
               </div>
             )}
 
