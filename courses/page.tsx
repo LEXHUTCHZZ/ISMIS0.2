@@ -1,3 +1,4 @@
+// pages/dashboard/courses.tsx
 "use client";
 
 import { useEffect, useState } from "react";
@@ -22,7 +23,7 @@ import {
   Transaction,
   Notification,
   UserData,
-} from "../models"; // Ensure this path matches your project structure
+} from "../models";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import CheckoutPage from "../components/CheckoutPage";
@@ -166,6 +167,7 @@ export default function CoursePage() {
             subjects: doc.data().subjects || [],
             resources: doc.data().resources || [],
             tests: doc.data().tests || [],
+            coursework: doc.data().coursework || [], // Ensure coursework is initialized
           })) as Course[];
           setAllCourses(coursesList);
         }
@@ -199,9 +201,9 @@ export default function CoursePage() {
     setAllStudents((prev) =>
       prev.map((s) => {
         if (s.id === studentId) {
-          const updatedCourses = s.courses.map((c) => {
+          const updatedCourses = s.courses.map((c: Course) => {
             if (c.name === courseName) {
-              const updatedSubjects = c.subjects.map((sub) => {
+              const updatedSubjects = c.subjects.map((sub: Subject) => {
                 if (sub.name === subjectName) {
                   const updatedGrades = { ...sub.grades, [field]: value };
                   const classworkKeys = Object.keys(updatedGrades).filter((k) =>
@@ -272,16 +274,58 @@ export default function CoursePage() {
     }
   };
 
-  const handlePaymentSuccess = () => {
-    window.location.reload();
+  const handlePaymentSuccess = async (amount: number) => {
+    if (!studentData || !user) return;
+    try {
+      const updatedBalance = studentData.balance - amount;
+      const updatedTotalPaid = studentData.totalPaid + amount;
+      const paymentStatus = updatedBalance <= 0 ? "Paid" : "Partial";
+      const newTransaction: Transaction = {
+        id: new Date().toISOString(),
+        amount,
+        date: new Date().toISOString(),
+        status: "Completed",
+      };
+      const updatedTransactions = [...studentData.transactions, newTransaction];
+      await updateDoc(doc(db, "students", user.uid), {
+        balance: updatedBalance,
+        totalPaid: updatedTotalPaid,
+        paymentStatus,
+        transactions: updatedTransactions,
+      });
+      setStudentData({
+        ...studentData,
+        balance: updatedBalance,
+        totalPaid: updatedTotalPaid,
+        paymentStatus,
+        transactions: updatedTransactions,
+      });
+      alert("Payment processed successfully!");
+    } catch (error: any) {
+      alert("Failed to update payment: " + error.message);
+    }
   };
 
   const handleEnrollCourse = async (course: Course) => {
     if (!studentData || !user) return;
+    const isAlreadyEnrolled = studentData.courses.some((c) => c.id === course.id);
+    if (isAlreadyEnrolled) return alert("You are already enrolled in this course!");
     const updatedCourses = [...studentData.courses, course];
+    const updatedTotalOwed = studentData.totalOwed + course.fee;
+    const updatedBalance = studentData.balance + course.fee;
     try {
-      await updateDoc(doc(db, "students", user.uid), { courses: updatedCourses });
-      setStudentData({ ...studentData, courses: updatedCourses });
+      await updateDoc(doc(db, "students", user.uid), {
+        courses: updatedCourses,
+        totalOwed: updatedTotalOwed,
+        balance: updatedBalance,
+        paymentStatus: updatedBalance > 0 ? "Partial" : "Paid",
+      });
+      setStudentData({
+        ...studentData,
+        courses: updatedCourses,
+        totalOwed: updatedTotalOwed,
+        balance: updatedBalance,
+      });
       alert("Enrolled successfully!");
     } catch (error: any) {
       alert("Failed to enroll: " + error.message);
@@ -297,7 +341,7 @@ export default function CoursePage() {
     const studentToUpdate = allStudents.find((s) => s.id === studentId);
     if (!studentToUpdate) return;
 
-    const updatedCourses = studentToUpdate.courses.map((c) => {
+    const updatedCourses = studentToUpdate.courses.map((c: Course) => {
       if (c.name === courseName) {
         return {
           ...c,
@@ -326,7 +370,7 @@ export default function CoursePage() {
         id: courseRef.id,
         name: courseName,
         fee,
-        coursework: [], // Initialize coursework as an empty array
+        coursework: [],
         subjects: [],
         resources: [],
         tests: [],
@@ -510,7 +554,7 @@ export default function CoursePage() {
                       Notifications
                     </h3>
                     {studentData.notifications.length ? (
-                      studentData.notifications.map((notif) => (
+                      studentData.notifications.map((notif: Notification) => (
                         <div
                           key={notif.id}
                           className="flex justify-between items-center mb-2"
@@ -552,47 +596,55 @@ export default function CoursePage() {
                     <h3 className="text-lg font-semibold text-red-800 mb-4">
                       Your Grades
                     </h3>
-                    {studentData.courses.map((c) => (
-                      <div key={c.id} className="mb-4">
-                        <p className="text-red-800 font-medium">
-                          {c.name} (Fee: {c.fee.toLocaleString()} JMD)
-                        </p>
-                        <table className="w-full mt-2 border-collapse">
-                          <thead>
-                            <tr className="bg-red-800 text-white">
-                              <th className="p-2 border">Subject</th>
-                              <th className="p-2 border">Classwork</th>
-                              <th className="p-2 border">Exam</th>
-                              <th className="p-2 border">Final</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {c.subjects.map((sub) => (
-                              <tr key={sub.name}>
-                                <td className="p-2 border text-red-800">
-                                  {sub.name || "N/A"}
-                                </td>
-                                <td className="p-2 border text-red-800">
-                                  {Object.keys(sub.grades || {})
-                                    .filter((k) => k.startsWith("C"))
-                                    .map((k) => sub.grades![k] || "N/A")
-                                    .join(", ")}
-                                </td>
-                                <td className="p-2 border text-red-800">
-                                  {sub.grades?.exam || "N/A"}
-                                </td>
-                                <td className="p-2 border text-red-800">
-                                  {sub.grades?.final || "N/A"}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        <p className="mt-2 text-red-800">
-                          Average: {calculateCourseAverage(c.subjects)}
-                        </p>
-                      </div>
-                    ))}
+                    {studentData.courses.length ? (
+                      studentData.courses.map((c: Course) => (
+                        <div key={c.id} className="mb-4">
+                          <p className="text-red-800 font-medium">
+                            {c.name} (Fee: {c.fee.toLocaleString()} JMD)
+                          </p>
+                          {c.subjects.length ? (
+                            <table className="w-full mt-2 border-collapse">
+                              <thead>
+                                <tr className="bg-red-800 text-white">
+                                  <th className="p-2 border">Subject</th>
+                                  <th className="p-2 border">Classwork</th>
+                                  <th className="p-2 border">Exam</th>
+                                  <th className="p-2 border">Final</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {c.subjects.map((sub: Subject) => (
+                                  <tr key={sub.name}>
+                                    <td className="p-2 border text-red-800">
+                                      {sub.name || "N/A"}
+                                    </td>
+                                    <td className="p-2 border text-red-800">
+                                      {Object.keys(sub.grades || {})
+                                        .filter((k) => k.startsWith("C"))
+                                        .map((k) => sub.grades![k] || "N/A")
+                                        .join(", ")}
+                                    </td>
+                                    <td className="p-2 border text-red-800">
+                                      {sub.grades?.exam || "N/A"}
+                                    </td>
+                                    <td className="p-2 border text-red-800">
+                                      {sub.grades?.final || "N/A"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p className="text-red-800">No subjects assigned.</p>
+                          )}
+                          <p className="mt-2 text-red-800">
+                            Average: {calculateCourseAverage(c.subjects)}
+                          </p>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-red-800">No courses enrolled.</p>
+                    )}
                   </div>
 
                   {/* Payments */}
@@ -612,7 +664,7 @@ export default function CoursePage() {
                         Transaction History
                       </h4>
                       {studentData.transactions.length ? (
-                        studentData.transactions.map((txn) => (
+                        studentData.transactions.map((txn: Transaction) => (
                           <p key={txn.id} className="text-red-800">
                             {new Date(txn.date).toLocaleString()}:{" "}
                             {txn.amount.toLocaleString()} JMD - {txn.status}
@@ -622,7 +674,12 @@ export default function CoursePage() {
                         <p className="text-red-800">No transactions.</p>
                       )}
                     </div>
-                    <CheckoutPage onPaymentSuccess={handlePaymentSuccess} />
+                    {studentData.balance > 0 && (
+                      <CheckoutPage
+                        balance={studentData.balance} // Pass balance prop
+                        onPaymentSuccess={handlePaymentSuccess}
+                      />
+                    )}
                   </div>
 
                   {/* Course Enrollment */}
@@ -631,14 +688,14 @@ export default function CoursePage() {
                       Enroll in Courses
                     </h3>
                     {allCourses.length ? (
-                      allCourses.map((course) => (
-                        <div key={course.id} className="mb-2">
+                      allCourses.map((course: Course) => (
+                        <div key={course.id} className="mb-2 flex justify-between items-center">
                           <p className="text-red-800">
                             {course.name} (Fee: {course.fee.toLocaleString()} JMD)
                           </p>
                           <button
                             onClick={() => handleEnrollCourse(course)}
-                            className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                            className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400"
                             disabled={studentData.courses.some((c) => c.id === course.id)}
                           >
                             {studentData.courses.some((c) => c.id === course.id)
@@ -663,91 +720,95 @@ export default function CoursePage() {
                 Manage Student Grades
               </h3>
               {allStudents.length ? (
-                allStudents.map((s) => (
+                allStudents.map((s: StudentData) => (
                   <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
                     <p className="text-lg font-medium text-red-800 mb-2">
                       {s.name || "Unnamed"}
                     </p>
-                    {s.courses.map((c) => (
+                    {s.courses.map((c: Course) => (
                       <div key={c.id} className="mb-4">
                         <p className="text-red-800 font-medium">{c.name}</p>
-                        <table className="w-full mt-2 border-collapse">
-                          <thead>
-                            <tr className="bg-red-800 text-white">
-                              <th className="p-2 border">Subject</th>
-                              <th className="p-2 border">C1</th>
-                              <th className="p-2 border">C2</th>
-                              <th className="p-2 border">Exam</th>
-                              <th className="p-2 border">Final</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {c.subjects.map((sub) => (
-                              <tr key={sub.name}>
-                                <td className="p-2 border text-red-800">
-                                  {sub.name || "N/A"}
-                                </td>
-                                <td className="p-2 border">
-                                  <input
-                                    type="number"
-                                    value={sub.grades?.C1 || ""}
-                                    onChange={(e) =>
-                                      handleGradeUpdate(
-                                        s.id,
-                                        c.name,
-                                        sub.name,
-                                        "C1",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full p-1 border rounded text-red-800"
-                                    min="0"
-                                    max="100"
-                                  />
-                                </td>
-                                <td className="p-2 border">
-                                  <input
-                                    type="number"
-                                    value={sub.grades?.C2 || ""}
-                                    onChange={(e) =>
-                                      handleGradeUpdate(
-                                        s.id,
-                                        c.name,
-                                        sub.name,
-                                        "C2",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full p-1 border rounded text-red-800"
-                                    min="0"
-                                    max="100"
-                                  />
-                                </td>
-                                <td className="p-2 border">
-                                  <input
-                                    type="number"
-                                    value={sub.grades?.exam || ""}
-                                    onChange={(e) =>
-                                      handleGradeUpdate(
-                                        s.id,
-                                        c.name,
-                                        sub.name,
-                                        "exam",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full p-1 border rounded text-red-800"
-                                    min="0"
-                                    max="100"
-                                  />
-                                </td>
-                                <td className="p-2 border text-red-800">
-                                  {sub.grades?.final || "N/A"}
-                                </td>
+                        {c.subjects.length ? (
+                          <table className="w-full mt-2 border-collapse">
+                            <thead>
+                              <tr className="bg-red-800 text-white">
+                                <th className="p-2 border">Subject</th>
+                                <th className="p-2 border">C1</th>
+                                <th className="p-2 border">C2</th>
+                                <th className="p-2 border">Exam</th>
+                                <th className="p-2 border">Final</th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody>
+                              {c.subjects.map((sub: Subject) => (
+                                <tr key={sub.name}>
+                                  <td className="p-2 border text-red-800">
+                                    {sub.name || "N/A"}
+                                  </td>
+                                  <td className="p-2 border">
+                                    <input
+                                      type="number"
+                                      value={sub.grades?.C1 || ""}
+                                      onChange={(e) =>
+                                        handleGradeUpdate(
+                                          s.id,
+                                          c.name,
+                                          sub.name,
+                                          "C1",
+                                          e.target.value
+                                        )
+                                      }
+                                      className="w-full p-1 border rounded text-red-800"
+                                      min="0"
+                                      max="100"
+                                    />
+                                  </td>
+                                  <td className="p-2 border">
+                                    <input
+                                      type="number"
+                                      value={sub.grades?.C2 || ""}
+                                      onChange={(e) =>
+                                        handleGradeUpdate(
+                                          s.id,
+                                          c.name,
+                                          sub.name,
+                                          "C2",
+                                          e.target.value
+                                        )
+                                      }
+                                      className="w-full p-1 border rounded text-red-800"
+                                      min="0"
+                                      max="100"
+                                    />
+                                  </td>
+                                  <td className="p-2 border">
+                                    <input
+                                      type="number"
+                                      value={sub.grades?.exam || ""}
+                                      onChange={(e) =>
+                                        handleGradeUpdate(
+                                          s.id,
+                                          c.name,
+                                          sub.name,
+                                          "exam",
+                                          e.target.value
+                                        )
+                                      }
+                                      className="w-full p-1 border rounded text-red-800"
+                                      min="0"
+                                      max="100"
+                                    />
+                                  </td>
+                                  <td className="p-2 border text-red-800">
+                                    {sub.grades?.final || "N/A"}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        ) : (
+                          <p className="text-red-800">No subjects assigned.</p>
+                        )}
                         <div className="mt-2">
                           <input
                             type="text"
@@ -809,13 +870,13 @@ export default function CoursePage() {
                   type="text"
                   placeholder="Student Name"
                   id="new-student-name"
-                  className="p-2 border rounded text-red-800 mr-2"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
                 />
                 <input
                   type="email"
                   placeholder="Student Email"
                   id="new-student-email"
-                  className="p-2 border rounded text-red-800 mr-2"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
                 />
                 <button
                   onClick={() => {
@@ -852,13 +913,13 @@ export default function CoursePage() {
                   type="text"
                   placeholder="Course Name"
                   id="new-course-name"
-                  className="p-2 border rounded text-red-800 mr-2"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
                 />
                 <input
                   type="number"
                   placeholder="Fee (JMD)"
                   id="new-course-fee"
-                  className="p-2 border rounded text-red-800 mr-2"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
                   min="0"
                 />
                 <button
@@ -890,7 +951,7 @@ export default function CoursePage() {
 
               {/* Manage Students */}
               {allStudents.length ? (
-                allStudents.map((s) => (
+                allStudents.map((s: StudentData) => (
                   <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
                     <p className="text-lg font-medium text-red-800 mb-2">
                       {s.name || "Unnamed"}
@@ -903,107 +964,115 @@ export default function CoursePage() {
                     </p>
 
                     {/* Grades Management */}
-                    {s.courses.map((c) => (
-                      <div key={c.id} className="mb-4">
-                        <p className="text-red-800 font-medium">{c.name}</p>
-                        <table className="w-full mt-2 border-collapse">
-                          <thead>
-                            <tr className="bg-red-800 text-white">
-                              <th className="p-2 border">Subject</th>
-                              <th className="p-2 border">C1</th>
-                              <th className="p-2 border">C2</th>
-                              <th className="p-2 border">Exam</th>
-                              <th className="p-2 border">Final</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {c.subjects.map((sub) => (
-                              <tr key={sub.name}>
-                                <td className="p-2 border text-red-800">
-                                  {sub.name || "N/A"}
-                                </td>
-                                <td className="p-2 border">
-                                  <input
-                                    type="number"
-                                    value={sub.grades?.C1 || ""}
-                                    onChange={(e) =>
-                                      handleGradeUpdate(
-                                        s.id,
-                                        c.name,
-                                        sub.name,
-                                        "C1",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full p-1 border rounded text-red-800"
-                                    min="0"
-                                    max="100"
-                                  />
-                                </td>
-                                <td className="p-2 border">
-                                  <input
-                                    type="number"
-                                    value={sub.grades?.C2 || ""}
-                                    onChange={(e) =>
-                                      handleGradeUpdate(
-                                        s.id,
-                                        c.name,
-                                        sub.name,
-                                        "C2",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full p-1 border rounded text-red-800"
-                                    min="0"
-                                    max="100"
-                                  />
-                                </td>
-                                <td className="p-2 border">
-                                  <input
-                                    type="number"
-                                    value={sub.grades?.exam || ""}
-                                    onChange={(e) =>
-                                      handleGradeUpdate(
-                                        s.id,
-                                        c.name,
-                                        sub.name,
-                                        "exam",
-                                        e.target.value
-                                      )
-                                    }
-                                    className="w-full p-1 border rounded text-red-800"
-                                    min="0"
-                                    max="100"
-                                  />
-                                </td>
-                                <td className="p-2 border text-red-800">
-                                  {sub.grades?.final || "N/A"}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        <div className="mt-2">
-                          <input
-                            type="text"
-                            placeholder="Add new subject"
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && e.currentTarget.value) {
-                                handleAddSubject(s.id, c.name, e.currentTarget.value);
-                                e.currentTarget.value = "";
-                              }
-                            }}
-                            className="p-2 border rounded text-red-800"
-                          />
+                    {s.courses.length ? (
+                      s.courses.map((c: Course) => (
+                        <div key={c.id} className="mb-4">
+                          <p className="text-red-800 font-medium">{c.name}</p>
+                          {c.subjects.length ? (
+                            <table className="w-full mt-2 border-collapse">
+                              <thead>
+                                <tr className="bg-red-800 text-white">
+                                  <th className="p-2 border">Subject</th>
+                                  <th className="p-2 border">C1</th>
+                                  <th className="p-2 border">C2</th>
+                                  <th className="p-2 border">Exam</th>
+                                  <th className="p-2 border">Final</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {c.subjects.map((sub: Subject) => (
+                                  <tr key={sub.name}>
+                                    <td className="p-2 border text-red-800">
+                                      {sub.name || "N/A"}
+                                    </td>
+                                    <td className="p-2 border">
+                                      <input
+                                        type="number"
+                                        value={sub.grades?.C1 || ""}
+                                        onChange={(e) =>
+                                          handleGradeUpdate(
+                                            s.id,
+                                            c.name,
+                                            sub.name,
+                                            "C1",
+                                            e.target.value
+                                          )
+                                        }
+                                        className="w-full p-1 border rounded text-red-800"
+                                        min="0"
+                                        max="100"
+                                      />
+                                    </td>
+                                    <td className="p-2 border">
+                                      <input
+                                        type="number"
+                                        value={sub.grades?.C2 || ""}
+                                        onChange={(e) =>
+                                          handleGradeUpdate(
+                                            s.id,
+                                            c.name,
+                                            sub.name,
+                                            "C2",
+                                            e.target.value
+                                          )
+                                        }
+                                        className="w-full p-1 border rounded text-red-800"
+                                        min="0"
+                                        max="100"
+                                      />
+                                    </td>
+                                    <td className="p-2 border">
+                                      <input
+                                        type="number"
+                                        value={sub.grades?.exam || ""}
+                                        onChange={(e) =>
+                                          handleGradeUpdate(
+                                            s.id,
+                                            c.name,
+                                            sub.name,
+                                            "exam",
+                                            e.target.value
+                                          )
+                                        }
+                                        className="w-full p-1 border rounded text-red-800"
+                                        min="0"
+                                        max="100"
+                                      />
+                                    </td>
+                                    <td className="p-2 border text-red-800">
+                                      {sub.grades?.final || "N/A"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p className="text-red-800">No subjects assigned.</p>
+                          )}
+                          <div className="mt-2">
+                            <input
+                              type="text"
+                              placeholder="Add new subject"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && e.currentTarget.value) {
+                                  handleAddSubject(s.id, c.name, e.currentTarget.value);
+                                  e.currentTarget.value = "";
+                                }
+                              }}
+                              className="p-2 border rounded text-red-800"
+                            />
+                          </div>
+                          <button
+                            onClick={() => handleUpdateStudent(s.id)}
+                            className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                          >
+                            Save Grades
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleUpdateStudent(s.id)}
-                          className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                        >
-                          Save Grades
-                        </button>
-                      </div>
-                    ))}
+                      ))
+                    ) : (
+                      <p className="text-red-800">No courses enrolled.</p>
+                    )}
 
                     {/* Send Notification */}
                     <div className="mt-2">
@@ -1016,7 +1085,7 @@ export default function CoursePage() {
                             e.currentTarget.value = "";
                           }
                         }}
-                        className="p-2 border rounded text-red-800 mr-2"
+                        className="p-2 border rounded text-red-800 mr-2 w-full"
                       />
                     </div>
 
@@ -1066,7 +1135,7 @@ export default function CoursePage() {
                 Download Financial Report
               </button>
               {allStudents.length ? (
-                allStudents.map((s) => (
+                allStudents.map((s: StudentData) => (
                   <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
                     <p className="text-lg font-medium text-red-800 mb-2">
                       {s.name || "Unnamed"}
@@ -1087,7 +1156,7 @@ export default function CoursePage() {
                     <div className="mt-2">
                       <h4 className="text-red-800 font-medium">Transactions</h4>
                       {s.transactions.length ? (
-                        s.transactions.map((txn) => (
+                        s.transactions.map((txn: Transaction) => (
                           <p key={txn.id} className="text-red-800">
                             {new Date(txn.date).toLocaleString()}:{" "}
                             {txn.amount.toLocaleString()} JMD - {txn.status}
