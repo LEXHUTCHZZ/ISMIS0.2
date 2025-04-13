@@ -86,10 +86,12 @@ export default function Dashboard() {
   const router = useRouter();
   const { user } = useAuth();
 
-  // Memoized greeting
+  // Memoized greeting with emojis
   const greetingText = useMemo(() => {
     const hour = new Date().getHours();
-    return hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening";
+    if (hour < 12) return "Good Morning 🌞";
+    if (hour < 18) return "Good Afternoon ⛅";
+    return "Good Evening 🌙";
   }, []);
 
   // Fetch data with real-time listeners
@@ -107,6 +109,7 @@ export default function Dashboard() {
       }
 
       try {
+        let unsubscribeNotifications: (() => void) | undefined; // Declare unsubscribeNotifications in the outer scope
         const userDoc = doc(db, "users", currentUser.uid);
         const unsubscribeUser = onSnapshot(userDoc, async (snap) => {
           if (!snap.exists()) {
@@ -230,14 +233,16 @@ export default function Dashboard() {
             );
             setAllCourses(courses);
           }
-
-          return () => {
-            unsubscribeUser();
-            if (unsubscribeStudent) unsubscribeStudent();
-            if (unsubscribeNotifications) unsubscribeNotifications();
-          };
         });
+        return () => {
+          unsubscribeUser();
+          if (unsubscribeNotifications) {
+            unsubscribeNotifications();
+          }
+          if (unsubscribeNotifications) unsubscribeNotifications();
+        };
       } catch (e) {
+        console.error("Error fetching data:", e);
         setError("Failed to load data");
         setLoading(false);
       }
@@ -262,7 +267,7 @@ export default function Dashboard() {
     field: string,
     value: string
   ) => {
-    if (role && !hasPermission(role, ["teacher", "admin"])) return;
+    if (!role || !hasPermission(role, ["teacher", "admin"])) return;
     if (field !== "comments" && (isNaN(parseFloat(value)) || parseFloat(value) < 0 || parseFloat(value) > 100)) {
       alert("Enter a grade between 0 and 100");
       return;
@@ -270,9 +275,9 @@ export default function Dashboard() {
     setAllStudents((prev) =>
       prev.map((s) => {
         if (s.id !== studentId) return s;
-        const courses = s.courses.map((c) => {
+        const courses = s.courses?.map((c) => {
           if (c.name !== courseName) return c;
-          const subjects = c.subjects.map((sub) => {
+          const subjects = c.subjects?.map((sub) => {
             if (sub.name !== subjectName) return sub;
             if (field === "comments") return { ...sub, comments: value };
             const grades = { ...sub.grades, [field]: value };
@@ -285,9 +290,9 @@ export default function Dashboard() {
               grades.final = (classwork.reduce((sum, v) => sum + v, 0) / classwork.length * 0.4 + exam * 0.6).toFixed(2);
             }
             return { ...sub, grades };
-          });
+          }) || [];
           return { ...c, subjects };
-        });
+        }) || [];
         return { ...s, courses };
       })
     );
@@ -302,13 +307,14 @@ export default function Dashboard() {
     try {
       await updateDoc(doc(db, "students", studentId), { courses: student.courses });
       alert("Grades updated");
-    } catch {
+    } catch (e) {
+      console.error("Error updating student:", e);
       alert("Failed to update grades");
     }
   };
 
   const handleSendNotification = async (studentId: string, message: string) => {
-    if (role && !hasPermission(role, ["teacher", "admin"])) return;
+    if (!role || !hasPermission(role, ["teacher", "admin"])) return;
     if (!message.trim()) {
       alert("Message cannot be empty");
       return;
@@ -333,7 +339,8 @@ export default function Dashboard() {
         )
       );
       alert("Notification sent");
-    } catch {
+    } catch (e) {
+      console.error("Error sending notification:", e);
       alert("Failed to send notification");
     }
   };
@@ -377,13 +384,14 @@ export default function Dashboard() {
       await setDoc(doc(db, "courses", courseId, "tests", testId, "responses", user.uid), response);
       setTestResponses((prev) => ({ ...prev, [testId]: response }));
       alert(`Test submitted! Score: ${response.score.toFixed(2)}%`);
-    } catch {
+    } catch (e) {
+      console.error("Error submitting test:", e);
       alert("Failed to submit test");
     }
   };
 
   const handleUploadResource = async () => {
-    if (role && !hasPermission(role, ["teacher", "admin"])) {
+    if (!role || !hasPermission(role, ["teacher", "admin"])) {
       alert("Permission denied");
       return;
     }
@@ -424,13 +432,14 @@ export default function Dashboard() {
       );
       setNewResource({ id: "", name: "", type: "", url: "", uploadDate: "", courseId: "" });
       alert("Resource uploaded");
-    } catch {
+    } catch (e) {
+      console.error("Error uploading resource:", e);
       alert("Failed to upload resource");
     }
   };
 
   const handleCreateTest = async () => {
-    if (role && !hasPermission(role, ["teacher", "admin"])) {
+    if (!role || !hasPermission(role, ["teacher", "admin"])) {
       alert("Permission denied");
       return;
     }
@@ -456,7 +465,7 @@ export default function Dashboard() {
       const ref = doc(collection(db, "courses", course.id, "tests"));
       const test: Test = {
         id: ref.id,
-        courseId: course.id, // Include the courseId property
+        courseId: course.id,
         title: newTest.title,
         questions: newTest.questions,
         createdAt: new Date().toISOString(),
@@ -475,7 +484,8 @@ export default function Dashboard() {
         createdAt: "",
       });
       alert("Test created");
-    } catch {
+    } catch (e) {
+      console.error("Error creating test:", e);
       alert("Failed to create test");
     }
   };
@@ -521,7 +531,8 @@ export default function Dashboard() {
       );
       setNewCoursework({ id: "", title: "", description: "", dueDate: "", weight: 0, type: "activity" });
       alert("Coursework uploaded");
-    } catch {
+    } catch (e) {
+      console.error("Error uploading coursework:", e);
       alert("Failed to upload coursework");
     }
   };
@@ -544,7 +555,8 @@ export default function Dashboard() {
       );
       setSubmissions((prev) => ({ ...prev, [courseworkId]: submission }));
       alert("Submission uploaded");
-    } catch {
+    } catch (e) {
+      console.error("Error submitting coursework:", e);
       alert("Failed to upload submission");
     }
   };
@@ -575,9 +587,12 @@ export default function Dashboard() {
           <div className="flex justify-between mb-8">
             <div className="flex items-center space-x-6">
               <img
-                src={userData.profilePicture || "/default-profile.png"}
+                src={userData.profilePicture || "https://via.placeholder.com/150"}
                 alt="Profile"
-                className="w-14 h-14 rounded-full object-cover"
+                className="w-14 h-14 rounded-full object-cover border-2 border-blue-600"
+                onError={(e) => {
+                  e.currentTarget.src = "https://via.placeholder.com/150";
+                }}
               />
               <div>
                 <h2 className="text-3xl font-bold text-blue-600">
@@ -643,14 +658,14 @@ export default function Dashboard() {
                                   {course.tests?.length ? (
                                     <div className="space-y-3 mt-2">
                                       {course.tests.map((t) => (
-                                        <div
-                                          key={t.id}
-                                          className="p-4 bg-gray-50 rounded-lg"
-                                        >
+                                        <div key={t.id} className="p-4 bg-gray-50 rounded-lg">
                                           <p className="text-blue-600 font-medium">{t.title}</p>
                                           {testResponses[t.id]?.submittedAt ? (
                                             <p className="text-gray-600">
-                                              Submitted: {testResponses[t.id].submittedAt ? new Date(testResponses[t.id].submittedAt || "").toLocaleString() : "N/A"}
+                                              Submitted:{" "}
+                                              {testResponses[t.id].submittedAt
+                                                ? new Date(testResponses[t.id].submittedAt || "").toLocaleString()
+                                                : "N/A"}
                                               <br />
                                               Score: {testResponses[t.id].score?.toFixed(2)}%
                                             </p>
@@ -707,6 +722,46 @@ export default function Dashboard() {
                                     </div>
                                   ) : (
                                     <p className="text-gray-600">No tests available</p>
+                                  )}
+                                </div>
+                                <div>
+                                  <h5 className="text-blue-600 font-medium">Coursework</h5>
+                                  {course.coursework?.length ? (
+                                    <div className="space-y-3 mt-2">
+                                      {course.coursework.map((cw) => (
+                                        <div key={cw.id} className="p-4 bg-gray-50 rounded-lg">
+                                          <p className="text-blue-600 font-medium">{cw.title}</p>
+                                          <p className="text-gray-600">{cw.description}</p>
+                                          <p className="text-gray-600">
+                                            Due: {new Date(cw.dueDate).toLocaleString()}
+                                          </p>
+                                          <p className="text-gray-600">Weight: {cw.weight}%</p>
+                                          {submissions[cw.id] ? (
+                                            <p className="text-gray-600">
+                                              Submitted:{" "}
+                                              {new Date(submissions[cw.id].submittedAt).toLocaleString()}
+                                            </p>
+                                          ) : (
+                                            <div className="mt-2">
+                                              <input
+                                                type="text"
+                                                placeholder="Submission URL"
+                                                onKeyDown={(e) =>
+                                                  e.key === "Enter" &&
+                                                  e.currentTarget.value &&
+                                                  handleSubmitCoursework(course.id, cw.id, e.currentTarget.value).then(
+                                                    () => (e.currentTarget.value = "")
+                                                  )
+                                                }
+                                                className="w-full p-2 border rounded text-gray-600"
+                                              />
+                                            </div>
+                                          )}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="text-gray-600">No coursework available</p>
                                   )}
                                 </div>
                               </div>
@@ -899,6 +954,86 @@ export default function Dashboard() {
                     >
                       Create Test
                     </button>
+                  </div>
+                  <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="text-xl font-semibold text-blue-600 mb-4">Upload Coursework</h3>
+                    <p className="text-gray-600 mb-4">
+                      Course: {selectedCourseName || "Select a course in Manage Grades"}
+                    </p>
+                    <input
+                      type="text"
+                      placeholder="Title"
+                      value={newCoursework.title}
+                      onChange={(e) => setNewCoursework({ ...newCoursework, title: e.target.value })}
+                      className="w-full p-3 border rounded text-gray-600 mb-4"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Description"
+                      value={newCoursework.description}
+                      onChange={(e) =>
+                        setNewCoursework({ ...newCoursework, description: e.target.value })
+                      }
+                      className="w-full p-3 border rounded text-gray-600 mb-4"
+                    />
+                    <input
+                      type="datetime-local"
+                      value={newCoursework.dueDate}
+                      onChange={(e) =>
+                        setNewCoursework({ ...newCoursework, dueDate: e.target.value })
+                      }
+                      className="w-full p-3 border rounded text-gray-600 mb-4"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Weight (%)"
+                      value={newCoursework.weight || ""}
+                      onChange={(e) =>
+                        setNewCoursework({
+                          ...newCoursework,
+                          weight: parseFloat(e.target.value) || 0,
+                        })
+                      }
+                      className="w-full p-3 border rounded text-gray-600 mb-4"
+                      min="0"
+                      max="100"
+                    />
+                    <button
+                      onClick={handleUploadCoursework}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500 disabled:bg-gray-400"
+                      disabled={!selectedCourseName}
+                    >
+                      Upload Coursework
+                    </button>
+                  </div>
+                  <div className="bg-white p-6 rounded-lg shadow">
+                    <h3 className="text-xl font-semibold text-blue-600 mb-4">Notifications</h3>
+                    <select
+                      value={selectedStudentId || ""}
+                      onChange={(e) => setSelectedStudentId(e.target.value || null)}
+                      className="w-full p-3 border rounded text-gray-600 mb-4"
+                    >
+                      <option value="">Select Student</option>
+                      {allStudents.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedStudentId && (
+                      <input
+                        type="text"
+                        placeholder="Send a message"
+                        onKeyDown={(e) =>
+                          e.key === "Enter" &&
+                          e.currentTarget.value &&
+                          handleSendNotification(selectedStudentId, e.currentTarget.value).then(
+                            () => (e.currentTarget.value = "")
+                          )
+                        }
+                        className="w-full p-3 border rounded text-gray-600"
+                      />
+                    )}
                   </div>
                 </div>
                 <div className="space-y-8">
