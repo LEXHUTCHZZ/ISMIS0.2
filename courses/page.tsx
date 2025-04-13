@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db } from "C:/Users/lexhu/Desktop/git ismis/ISMIS0.2/lib/firebase"; // Adjusted the path to match the correct location of your firebase configuration file
+import { auth, db } from "../lib/firebase"; // If importing from a file one level up // Adjusted the path to match the correct location of your firebase configuration file
 import { onAuthStateChanged } from "firebase/auth";
 import {
   doc,
