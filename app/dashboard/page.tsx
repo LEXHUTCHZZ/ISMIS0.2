@@ -31,6 +31,8 @@ import {
 } from "../../models";
 import CheckoutPage from "../../components/CheckoutPage";
 import { markNotificationAsRead } from "../../utils/utils";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 // Error Boundary Component
 interface ErrorBoundaryProps {
@@ -303,6 +305,50 @@ export default function Dashboard() {
     }
   };
 
+  const handleGenerateGradeReport = () => {
+    if (!studentData || !studentData.courses) return;
+    
+    try {
+      const doc = new jsPDF();
+      doc.text("Grade Report", 20, 20);
+      doc.text(`Student: ${studentData.name || username}`, 20, 30);
+      doc.text(`Date: ${new Date().toLocaleDateString()}`, 20, 40);
+
+      let yPosition = 60;
+      
+      studentData.courses.forEach((course) => {
+        doc.text(`Course: ${course.name}`, 20, yPosition);
+        yPosition += 10;
+        
+        if (course.subjects && course.subjects.length) {
+          const gradeData = course.subjects.map(subject => [
+            subject.name,
+            subject.grades?.C1 || "N/A",
+            subject.grades?.C2 || "N/A",
+            subject.grades?.exam || "N/A",
+            subject.grades?.final || "N/A"
+          ]);
+          
+          autoTable(doc, {
+            startY: yPosition,
+            head: [['Subject', 'Classwork 1', 'Classwork 2', 'Exam', 'Final Grade']],
+            body: gradeData,
+          });
+          
+          yPosition = (doc as any).lastAutoTable.finalY + 15;
+        } else {
+          doc.text("No grades available", 25, yPosition);
+          yPosition += 15;
+        }
+      });
+
+      doc.save(`${studentData.name || username}_grade_report.pdf`);
+    } catch (err: any) {
+      console.error("Error generating grade report:", err);
+      alert("Failed to generate grade report: " + err.message);
+    }
+  };
+
   // STUDENT FUNCTIONS
   const handlePaymentSuccess = async (amount: number) => {
     if (!studentData || !user) return;
@@ -410,7 +456,15 @@ export default function Dashboard() {
 
                 {/* Courses and Grades */}
                 <div className="bg-white p-6 rounded-lg shadow">
-                  <h2 className="text-xl font-semibold text-red-800 mb-4">Your Courses</h2>
+                  <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-xl font-semibold text-red-800">Your Courses</h2>
+                    <button
+                      onClick={handleGenerateGradeReport}
+                      className="px-4 py-2 bg-red-800 text-white rounded hover:bg-red-700"
+                    >
+                      Download Grade Report
+                    </button>
+                  </div>
                   {studentData.courses?.length ? (
                     studentData.courses.map((course) => (
                       <div key={course.id} className="mb-6 border-b pb-4">
