@@ -4,17 +4,38 @@
 import { useEffect, useState } from "react";
 import { auth, db } from "../../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  collection,
+  getDocs,
+  setDoc,
+  addDoc,
+} from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../contexts/AuthContext";
-import { StudentData, Course, Subject, Transaction, Notification, Resource, Test, TestResponse, User } from "../../models"; // Updated import path
+import {
+  StudentData,
+  Course,
+  Subject,
+  Transaction,
+  Notification,
+  Resource,
+  Test,
+  TestResponse,
+  User,
+} from "../../models";
 import CheckoutPage from "../../components/CheckoutPage";
 import { markNotificationAsRead } from "../../utils/utils";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
   const [studentData, setStudentData] = useState<StudentData | null>(null);
+  const [allStudents, setAllStudents] = useState<StudentData[]>([]); // For teacher/admin/accountsadmin
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [role, setRole] = useState<string>("");
   const [username, setUsername] = useState("");
@@ -54,11 +75,16 @@ export default function Dashboard() {
         const hour = new Date().getHours();
         setGreeting(hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening");
 
+        // Fetch student data for students
         if (fetchedUserData.role === "student") {
           const studentDocRef = doc(db, "students", currentUser.uid);
           const studentSnap = await getDoc(studentDocRef);
           const fetchedStudentData = studentSnap.exists() ? (studentSnap.data() as StudentData) : null;
-          setStudentData(fetchedStudentData ? { ...fetchedStudentData, transactions: fetchedStudentData.transactions || [], notifications: fetchedStudentData.notifications || [] } : null);
+          setStudentData(
+            fetchedStudentData
+              ? { ...fetchedStudentData, transactions: fetchedStudentData.transactions || [], notifications: fetchedStudentData.notifications || [] }
+              : null
+          );
 
           const coursesSnapshot = await getDocs(collection(db, "courses"));
           const coursesList = await Promise.all(
@@ -75,10 +101,63 @@ export default function Dashboard() {
                   if (response) {
                     setTestResponses((prev) => ({ ...prev, [testDoc.id]: response }));
                   }
-                  const { id, ...restTestData } = testData;
-                  return { id: testDoc.id, ...restTestData };
+                  return { ...testData, id: testDoc.id };
                 })
               );
+              return { id: courseDoc.id, ...courseData, resources, tests } as Course;
+            })
+          );
+          setAllCourses(coursesList);
+        }
+
+        // Fetch all students and courses for teacher/admin/accountsadmin
+        if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
+          const studentsSnapshot = await getDocs(collection(db, "students"));
+          const studentsList = await Promise.all(
+            studentsSnapshot.docs.map(async (studentDoc) => {
+              const studentData = studentDoc.data();
+              const transactionsRef = collection(studentDoc.ref, "transactions");
+              const transactionsSnap = await getDocs(transactionsRef);
+              const transactions = transactionsSnap.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+              })) as Transaction[];
+              const notificationsRef = collection(studentDoc.ref, "notifications");
+              const notificationsSnap = await getDocs(notificationsRef);
+              const notifications = notificationsSnap.docs.map((doc) => ({
+                id: doc.id,
+                ...doc.data(),
+              })) as Notification[];
+              return {
+                id: studentDoc.id,
+                name: studentData.name || "",
+                email: studentData.email || "",
+                lecturerId: studentData.lecturerId || null,
+                courses: studentData.courses || [],
+                totalOwed: studentData.totalOwed || 0,
+                totalPaid: studentData.totalPaid || 0,
+                balance: studentData.balance || 0,
+                paymentStatus: studentData.paymentStatus || "Unpaid",
+                clearance: studentData.clearance || false,
+                transactions,
+                notifications,
+                idNumber: studentData.idNumber || undefined,
+                phoneNumber: studentData.phoneNumber || undefined,
+                homeAddress: studentData.homeAddress || undefined,
+                profilePicture: studentData.profilePicture || undefined,
+              } as StudentData;
+            })
+          );
+          setAllStudents(studentsList);
+
+          const coursesSnapshot = await getDocs(collection(db, "courses"));
+          const coursesList = await Promise.all(
+            coursesSnapshot.docs.map(async (courseDoc) => {
+              const courseData = courseDoc.data();
+              const resourcesSnapshot = await getDocs(collection(db, "courses", courseDoc.id, "resources"));
+              const testsSnapshot = await getDocs(collection(db, "courses", courseDoc.id, "tests"));
+              const resources = resourcesSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Resource));
+              const tests = testsSnapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() } as Test));
               return { id: courseDoc.id, ...courseData, resources, tests } as Course;
             })
           );
@@ -194,6 +273,277 @@ export default function Dashboard() {
     }
   };
 
+  // Teacher/Admin functions
+  const handleGradeUpdate = (
+    studentId: string,
+    courseName: string,
+    subjectName: string,
+    field: string,
+    value: string
+  ) => {
+    if (role !== "teacher" && role !== "admin") return;
+
+    setAllStudents((prev) =>
+      prev.map((s) => {
+        if (s.id === studentId) {
+          const updatedCourses = s.courses.map((c: Course) => {
+            if (c.name === courseName) {
+              const updatedSubjects = c.subjects.map((sub: Subject) => {
+                if (sub.name === subjectName) {
+                  const updatedGrades = { ...sub.grades, [field]: value };
+                  const classworkKeys = Object.keys(updatedGrades).filter((k) =>
+                    k.startsWith("C")
+                  );
+                  const classworkValues = classworkKeys
+                    .map((k) => parseFloat(updatedGrades[k] || "0"))
+                    .filter((v) => !isNaN(v));
+                  const exam = parseFloat(updatedGrades.exam || "0");
+                  if (classworkValues.length && !isNaN(exam)) {
+                    const classworkAvg =
+                      classworkValues.reduce((sum, v) => sum + v, 0) /
+                      classworkValues.length;
+                    updatedGrades.final = (classworkAvg * 0.4 + exam * 0.6).toFixed(2);
+                  }
+                  return { ...sub, grades: updatedGrades };
+                }
+                return sub;
+              });
+              return { ...c, subjects: updatedSubjects };
+            }
+            return c;
+          });
+          return { ...s, courses: updatedCourses };
+        }
+        return s;
+      })
+    );
+  };
+
+  const handleUpdateStudent = async (studentId: string) => {
+    const studentToUpdate = allStudents.find((s) => s.id === studentId);
+    if (!studentToUpdate) return;
+
+    try {
+      await updateDoc(doc(db, "students", studentId), {
+        courses: studentToUpdate.courses,
+      });
+      alert("Grades updated successfully!");
+    } catch (error: any) {
+      alert("Failed to update grades: " + error.message);
+    }
+  };
+
+  const handleAddSubject = async (
+    studentId: string,
+    courseName: string,
+    subjectName: string
+  ) => {
+    if (role !== "teacher" && role !== "admin") return;
+    const studentToUpdate = allStudents.find((s) => s.id === studentId);
+    if (!studentToUpdate) return;
+
+    const updatedCourses = studentToUpdate.courses.map((c: Course) => {
+      if (c.name === courseName) {
+        return {
+          ...c,
+          subjects: [...c.subjects, { name: subjectName, grades: {}, comments: "" }],
+        };
+      }
+      return c;
+    });
+
+    try {
+      await updateDoc(doc(db, "students", studentId), { courses: updatedCourses });
+      setAllStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, courses: updatedCourses } : s))
+      );
+      alert("Subject added!");
+    } catch (error: any) {
+      alert("Failed to add subject: " + error.message);
+    }
+  };
+
+  const handleGrantClearance = async (studentId: string) => {
+    if (!["admin", "accountsadmin"].includes(role)) return;
+    try {
+      await updateDoc(doc(db, "students", studentId), { clearance: true });
+      setAllStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, clearance: true } : s))
+      );
+      alert("Clearance granted!");
+    } catch (error: any) {
+      alert("Failed to grant clearance: " + error.message);
+    }
+  };
+
+  const handleRemoveClearance = async (studentId: string) => {
+    if (!["admin", "accountsadmin"].includes(role)) return;
+    try {
+      await updateDoc(doc(db, "students", studentId), { clearance: false });
+      setAllStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, clearance: false } : s))
+      );
+      alert("Clearance removed!");
+    } catch (error: any) {
+      alert("Failed to remove clearance: " + error.message);
+    }
+  };
+
+  const handleAddCourse = async (courseName: string, fee: number) => {
+    if (role !== "admin") return;
+    try {
+      const courseRef = doc(collection(db, "courses"));
+      const newCourse: Course = {
+        id: courseRef.id,
+        name: courseName,
+        fee,
+        coursework: [],
+        subjects: [],
+        resources: [],
+        tests: [],
+      };
+      await setDoc(courseRef, newCourse);
+      setAllCourses([...allCourses, newCourse]);
+      alert("Course added!");
+    } catch (error: any) {
+      alert("Failed to add course: " + error.message);
+    }
+  };
+
+  const handleAddStudent = async (name: string, email: string) => {
+    if (role !== "admin") return;
+    try {
+      const studentRef = doc(collection(db, "students"));
+      const newStudent: StudentData = {
+        id: studentRef.id,
+        name,
+        email,
+        lecturerId: null,
+        courses: [],
+        totalOwed: 0,
+        totalPaid: 0,
+        balance: 0,
+        paymentStatus: "Unpaid",
+        clearance: false,
+        transactions: [],
+        notifications: [],
+        idNumber: undefined,
+        phoneNumber: undefined,
+        homeAddress: undefined,
+        profilePicture: undefined,
+      };
+      await setDoc(studentRef, newStudent);
+      setAllStudents([...allStudents, newStudent]);
+      alert("Student added!");
+    } catch (error: any) {
+      alert("Failed to add student: " + error.message);
+    }
+  };
+
+  const handleSendNotification = async (studentId: string, message: string) => {
+    if (role !== "admin") return;
+    try {
+      const notificationRef = collection(db, "students", studentId, "notifications");
+      const newNotification: Omit<Notification, "id"> = {
+        message,
+        date: new Date().toISOString(),
+        read: false,
+      };
+      const docRef = await addDoc(notificationRef, newNotification);
+      setAllStudents((prev) =>
+        prev.map((s) =>
+          s.id === studentId
+            ? {
+                ...s,
+                notifications: [
+                  ...s.notifications,
+                  { ...newNotification, id: docRef.id },
+                ],
+              }
+            : s
+        )
+      );
+      alert("Notification sent!");
+    } catch (error: any) {
+      alert("Failed to send notification: " + error.message);
+    }
+  };
+
+  const handleAddResource = async (courseId: string, name: string, url: string, type: string) => {
+    if (role !== "teacher" && role !== "admin") return;
+    try {
+      const resourceRef = doc(collection(db, "courses", courseId, "resources"));
+      const newResource: Resource = {
+        id: resourceRef.id,
+        courseId,
+        name,
+        url,
+        type,
+        uploadDate: new Date().toISOString(),
+      };
+      await setDoc(resourceRef, newResource);
+      setAllCourses((prev) =>
+        prev.map((c) =>
+          c.id === courseId
+            ? { ...c, resources: [...(c.resources || []), newResource] }
+            : c
+        )
+      );
+      alert("Resource added!");
+    } catch (error: any) {
+      alert("Failed to add resource: " + error.message);
+    }
+  };
+
+  const handleAddTest = async (courseId: string, title: string, questions: Test["questions"]) => {
+    if (role !== "teacher" && role !== "admin") return;
+    try {
+      const testRef = doc(collection(db, "courses", courseId, "tests"));
+      const newTest: Test = {
+        id: testRef.id,
+        courseId,
+        title,
+        questions,
+        createdAt: new Date().toISOString(),
+      };
+      await setDoc(testRef, newTest);
+      setAllCourses((prev) =>
+        prev.map((c) =>
+          c.id === courseId
+            ? { ...c, tests: [...(c.tests || []), newTest] }
+            : c
+        )
+      );
+      alert("Test added!");
+    } catch (error: any) {
+      alert("Failed to add test: " + error.message);
+    }
+  };
+
+  const downloadFinancialReport = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text("Financial Report", 20, 20);
+
+    const data = allStudents.map((s) => [
+      s.name || "N/A",
+      s.totalOwed.toLocaleString() || "0",
+      s.totalPaid.toLocaleString() || "0",
+      s.balance.toLocaleString() || "0",
+      s.paymentStatus || "N/A",
+    ]);
+
+    autoTable(doc, {
+      head: [["Name", "Total Owed", "Total Paid", "Balance", "Status"]],
+      body: data,
+      startY: 30,
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [127, 29, 29] },
+    });
+
+    doc.save("Financial_Report.pdf");
+  };
+
   if (isLoading) return <p className="text-red-800 text-center">Loading...</p>;
   if (userData === null) return <p className="text-red-800 text-center">User data not found. Please log in again.</p>;
   if (!role) return null;
@@ -205,6 +555,27 @@ export default function Dashboard() {
         <ul className="space-y-2">
           <li><Link href="/dashboard" className="text-red-800 hover:underline">Dashboard</Link></li>
           <li><Link href="/profile" className="text-red-800 hover:underline">Profile</Link></li>
+          {role === "teacher" && (
+            <li>
+              <Link href="/dashboard/students" className="text-red-800 hover:underline">
+                Students
+              </Link>
+            </li>
+          )}
+          {role === "admin" && (
+            <li>
+              <Link href="/dashboard/management" className="text-red-800 hover:underline">
+                Management
+              </Link>
+            </li>
+          )}
+          {role === "accountsadmin" && (
+            <li>
+              <Link href="/dashboard/payments" className="text-red-800 hover:underline">
+                Payments
+              </Link>
+            </li>
+          )}
         </ul>
       </div>
 
@@ -225,6 +596,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* Student Dashboard (Unchanged) */}
           {role === "student" && (
             <div className="space-y-6">
               {!studentData ? (
@@ -459,6 +831,607 @@ export default function Dashboard() {
                     </div>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
+
+          {/* Teacher Dashboard */}
+          {role === "teacher" && (
+            <div className="space-y-6">
+              <h3 className="text-xl font-semibold text-red-800 mb-4">Manage Student Grades and Resources</h3>
+              {allStudents.length ? (
+                allStudents.map((s: StudentData) => (
+                  <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
+                    <p className="text-lg font-medium text-red-800 mb-2">{s.name || "Unnamed"}</p>
+                    {s.courses.length ? (
+                      s.courses.map((c: Course) => {
+                        const fullCourse = allCourses.find((ac) => ac.name === c.name);
+                        return (
+                          <div key={c.id || c.name} className="mb-4">
+                            <p className="text-red-800 font-medium">{c.name}</p>
+                            {/* Grades Management */}
+                            {c.subjects.length ? (
+                              <table className="w-full mt-2 border-collapse">
+                                <thead>
+                                  <tr className="bg-red-800 text-white">
+                                    <th className="p-2 border">Subject</th>
+                                    <th className="p-2 border">C1</th>
+                                    <th className="p-2 border">C2</th>
+                                    <th className="p-2 border">Exam</th>
+                                    <th className="p-2 border">Final</th>
+                                    <th className="p-2 border">Comments</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {c.subjects.map((sub: Subject) => (
+                                    <tr key={sub.name}>
+                                      <td className="p-2 border text-red-800">{sub.name || "N/A"}</td>
+                                      <td className="p-2 border">
+                                        <input
+                                          type="number"
+                                          value={sub.grades?.C1 || ""}
+                                          onChange={(e) =>
+                                            handleGradeUpdate(s.id, c.name, sub.name, "C1", e.target.value)
+                                          }
+                                          className="w-full p-1 border rounded text-red-800"
+                                          min="0"
+                                          max="100"
+                                        />
+                                      </td>
+                                      <td className="p-2 border">
+                                        <input
+                                          type="number"
+                                          value={sub.grades?.C2 || ""}
+                                          onChange={(e) =>
+                                            handleGradeUpdate(s.id, c.name, sub.name, "C2", e.target.value)
+                                          }
+                                          className="w-full p-1 border rounded text-red-800"
+                                          min="0"
+                                          max="100"
+                                        />
+                                      </td>
+                                      <td className="p-2 border">
+                                        <input
+                                          type="number"
+                                          value={sub.grades?.exam || ""}
+                                          onChange={(e) =>
+                                            handleGradeUpdate(s.id, c.name, sub.name, "exam", e.target.value)
+                                          }
+                                          className="w-full p-1 border rounded text-red-800"
+                                          min="0"
+                                          max="100"
+                                        />
+                                      </td>
+                                      <td className="p-2 border text-red-800">{sub.grades?.final || "N/A"}</td>
+                                      <td className="p-2 border text-red-800">{sub.comments || "N/A"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <p className="text-red-800">No subjects assigned.</p>
+                            )}
+                            <div className="mt-2">
+                              <input
+                                type="text"
+                                placeholder="Add new subject"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && e.currentTarget.value) {
+                                    handleAddSubject(s.id, c.name, e.currentTarget.value);
+                                    e.currentTarget.value = "";
+                                  }
+                                }}
+                                className="p-2 border rounded text-red-800"
+                              />
+                            </div>
+                            <button
+                              onClick={() => handleUpdateStudent(s.id)}
+                              className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                            >
+                              Save Grades
+                            </button>
+                            {/* Resources Management */}
+                            {fullCourse && (
+                              <div className="mt-4">
+                                <h4 className="text-red-800 font-medium">Resources for {c.name}</h4>
+                                {fullCourse.resources?.length ? (
+                                  <ul className="list-disc pl-5">
+                                    {fullCourse.resources.map((resource: Resource) => (
+                                      <li key={resource.id} className="text-red-800">
+                                        <a href={resource.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                          {resource.name} ({resource.type})
+                                        </a>{" "}
+                                        - Uploaded: {new Date(resource.uploadDate).toLocaleString()}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-red-800">No resources available.</p>
+                                )}
+                                <div className="mt-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Resource Name"
+                                    id={`resource-name-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="Resource URL"
+                                    id={`resource-url-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="Resource Type"
+                                    id={`resource-type-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const name = (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value;
+                                      const url = (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value;
+                                      const type = (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value;
+                                      if (name && url && type) {
+                                        handleAddResource(fullCourse.id, name, url, type);
+                                        (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                        (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                        (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                      } else {
+                                        alert("Please fill in all resource fields.");
+                                      }
+                                    }}
+                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                  >
+                                    Add Resource
+                                  </button>
+                                </div>
+                                {/* Tests Management */}
+                                <h4 className="text-red-800 font-medium mt-4">Tests for {c.name}</h4>
+                                {fullCourse.tests?.length ? (
+                                  fullCourse.tests.map((test: Test) => (
+                                    <div key={test.id} className="mt-2">
+                                      <p className="text-red-800">{test.title}</p>
+                                      <ul className="list-disc pl-5">
+                                        {test.questions.map((q, idx) => (
+                                          <li key={idx} className="text-red-800">
+                                            {q.question} (Correct: {q.correctAnswer})
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p className="text-red-800">No tests available.</p>
+                                )}
+                                <div className="mt-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Test Title"
+                                    id={`test-title-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const title = (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value;
+                                      if (title) {
+                                        const questions = [
+                                          { question: "Sample Question 1", options: ["A", "B", "C"], correctAnswer: "A" },
+                                          { question: "Sample Question 2", options: ["X", "Y", "Z"], correctAnswer: "Y" },
+                                        ];
+                                        handleAddTest(fullCourse.id, title, questions);
+                                        (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                      } else {
+                                        alert("Please enter a test title.");
+                                      }
+                                    }}
+                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                  >
+                                    Add Test
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-red-800">No courses assigned.</p>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <p className="text-red-800">No students assigned.</p>
+              )}
+            </div>
+          )}
+
+          {/* Admin Dashboard */}
+          {role === "admin" && (
+            <div className="space-y-6">
+              <h3 className="text-xl font-semibold text-red-800 mb-4">Admin Dashboard</h3>
+
+              {/* Analytics */}
+              <div className="bg-white p-4 rounded-lg shadow-md">
+                <h4 className="text-lg font-semibold text-red-800 mb-4">Analytics</h4>
+                <p className="text-red-800">Total Students: {allStudents.length}</p>
+                <p className="text-red-800">Total Courses: {allCourses.length}</p>
+                <p className="text-red-800">
+                  Total Revenue: {allStudents.reduce((sum, s) => sum + s.totalPaid, 0).toLocaleString()} JMD
+                </p>
+              </div>
+
+              {/* Add New Student */}
+              <div className="bg-white p-4 rounded-lg shadow-md">
+                <h4 className="text-lg font-semibold text-red-800 mb-4">Add New Student</h4>
+                <input
+                  type="text"
+                  placeholder="Student Name"
+                  id="new-student-name"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                />
+                <input
+                  type="email"
+                  placeholder="Student Email"
+                  id="new-student-email"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                />
+                <button
+                  onClick={() => {
+                    const name = (document.getElementById("new-student-name") as HTMLInputElement).value;
+                    const email = (document.getElementById("new-student-email") as HTMLInputElement).value;
+                    if (name && email) {
+                      handleAddStudent(name, email);
+                      (document.getElementById("new-student-name") as HTMLInputElement).value = "";
+                      (document.getElementById("new-student-email") as HTMLInputElement).value = "";
+                    } else {
+                      alert("Please enter both name and email.");
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                >
+                  Add Student
+                </button>
+              </div>
+
+              {/* Add New Course */}
+              <div className="bg-white p-4 rounded-lg shadow-md">
+                <h4 className="text-lg font-semibold text-red-800 mb-4">Add New Course</h4>
+                <input
+                  type="text"
+                  placeholder="Course Name"
+                  id="new-course-name"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                />
+                <input
+                  type="number"
+                  placeholder="Fee (JMD)"
+                  id="new-course-fee"
+                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                  min="0"
+                />
+                <button
+                  onClick={() => {
+                    const name = (document.getElementById("new-course-name") as HTMLInputElement).value;
+                    const feeStr = (document.getElementById("new-course-fee") as HTMLInputElement).value;
+                    const fee = parseFloat(feeStr);
+                    if (name && !isNaN(fee) && fee >= 0) {
+                      handleAddCourse(name, fee);
+                      (document.getElementById("new-course-name") as HTMLInputElement).value = "";
+                      (document.getElementById("new-course-fee") as HTMLInputElement).value = "";
+                    } else {
+                      alert("Please enter a valid course name and fee.");
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                >
+                  Add Course
+                </button>
+              </div>
+
+              {/* Manage Students */}
+              {allStudents.length ? (
+                allStudents.map((s: StudentData) => (
+                  <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
+                    <p className="text-lg font-medium text-red-800 mb-2">{s.name || "Unnamed"}</p>
+                    <p className="text-red-800">Balance: {s.balance.toLocaleString()} JMD</p>
+                    <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
+
+                    {/* Grades Management */}
+                    {s.courses.length ? (
+                      s.courses.map((c: Course) => {
+                        const fullCourse = allCourses.find((ac) => ac.name === c.name);
+                        return (
+                          <div key={c.id || c.name} className="mb-4">
+                            <p className="text-red-800 font-medium">{c.name}</p>
+                            {c.subjects.length ? (
+                              <table className="w-full mt-2 border-collapse">
+                                <thead>
+                                  <tr className="bg-red-800 text-white">
+                                    <th className="p-2 border">Subject</th>
+                                    <th className="p-2 border">C1</th>
+                                    <th className="p-2 border">C2</th>
+                                    <th className="p-2 border">Exam</th>
+                                    <th className="p-2 border">Final</th>
+                                    <th className="p-2 border">Comments</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {c.subjects.map((sub: Subject) => (
+                                    <tr key={sub.name}>
+                                      <td className="p-2 border text-red-800">{sub.name || "N/A"}</td>
+                                      <td className="p-2 border">
+                                        <input
+                                          type="number"
+                                          value={sub.grades?.C1 || ""}
+                                          onChange={(e) =>
+                                            handleGradeUpdate(s.id, c.name, sub.name, "C1", e.target.value)
+                                          }
+                                          className="w-full p-1 border rounded text-red-800"
+                                          min="0"
+                                          max="100"
+                                        />
+                                      </td>
+                                      <td className="p-2 border">
+                                        <input
+                                          type="number"
+                                          value={sub.grades?.C2 || ""}
+                                          onChange={(e) =>
+                                            handleGradeUpdate(s.id, c.name, sub.name, "C2", e.target.value)
+                                          }
+                                          className="w-full p-1 border rounded text-red-800"
+                                          min="0"
+                                          max="100"
+                                        />
+                                      </td>
+                                      <td className="p-2 border">
+                                        <input
+                                          type="number"
+                                          value={sub.grades?.exam || ""}
+                                          onChange={(e) =>
+                                            handleGradeUpdate(s.id, c.name, sub.name, "exam", e.target.value)
+                                          }
+                                          className="w-full p-1 border rounded text-red-800"
+                                          min="0"
+                                          max="100"
+                                        />
+                                      </td>
+                                      <td className="p-2 border text-red-800">{sub.grades?.final || "N/A"}</td>
+                                      <td className="p-2 border text-red-800">{sub.comments || "N/A"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            ) : (
+                              <p className="text-red-800">No subjects assigned.</p>
+                            )}
+                            <div className="mt-2">
+                              <input
+                                type="text"
+                                placeholder="Add new subject"
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && e.currentTarget.value) {
+                                    handleAddSubject(s.id, c.name, e.currentTarget.value);
+                                    e.currentTarget.value = "";
+                                  }
+                                }}
+                                className="p-2 border rounded text-red-800"
+                              />
+                            </div>
+                            <button
+                              onClick={() => handleUpdateStudent(s.id)}
+                              className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                            >
+                              Save Grades
+                            </button>
+                            {/* Resources Management */}
+                            {fullCourse && (
+                              <div className="mt-4">
+                                <h4 className="text-red-800 font-medium">Resources for {c.name}</h4>
+                                {fullCourse.resources?.length ? (
+                                  <ul className="list-disc pl-5">
+                                    {fullCourse.resources.map((resource: Resource) => (
+                                      <li key={resource.id} className="text-red-800">
+                                        <a href={resource.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                          {resource.name} ({resource.type})
+                                        </a>{" "}
+                                        - Uploaded: {new Date(resource.uploadDate).toLocaleString()}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-red-800">No resources available.</p>
+                                )}
+                                <div className="mt-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Resource Name"
+                                    id={`resource-name-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="Resource URL"
+                                    id={`resource-url-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <input
+                                    type="text"
+                                    placeholder="Resource Type"
+                                    id={`resource-type-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const name = (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value;
+                                      const url = (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value;
+                                      const type = (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value;
+                                      if (name && url && type) {
+                                        handleAddResource(fullCourse.id, name, url, type);
+                                        (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                        (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                        (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                      } else {
+                                        alert("Please fill in all resource fields.");
+                                      }
+                                    }}
+                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                  >
+                                    Add Resource
+                                  </button>
+                                </div>
+                                {/* Tests Management */}
+                                <h4 className="text-red-800 font-medium mt-4">Tests for {c.name}</h4>
+                                {fullCourse.tests?.length ? (
+                                  fullCourse.tests.map((test: Test) => (
+                                    <div key={test.id} className="mt-2">
+                                      <p className="text-red-800">{test.title}</p>
+                                      <ul className="list-disc pl-5">
+                                        {test.questions.map((q, idx) => (
+                                          <li key={idx} className="text-red-800">
+                                            {q.question} (Correct: {q.correctAnswer})
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ))
+                                ) : (
+                                  <p className="text-red-800">No tests available.</p>
+                                )}
+                                <div className="mt-2">
+                                  <input
+                                    type="text"
+                                    placeholder="Test Title"
+                                    id={`test-title-${fullCourse.id}`}
+                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                  />
+                                  <button
+                                    onClick={() => {
+                                      const title = (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value;
+                                      if (title) {
+                                        const questions = [
+                                          { question: "Sample Question 1", options: ["A", "B", "C"], correctAnswer: "A" },
+                                          { question: "Sample Question 2", options: ["X", "Y", "Z"], correctAnswer: "Y" },
+                                        ];
+                                        handleAddTest(fullCourse.id, title, questions);
+                                        (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                      } else {
+                                        alert("Please enter a test title.");
+                                      }
+                                    }}
+                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                  >
+                                    Add Test
+                                  </button>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <p className="text-red-800">No courses enrolled.</p>
+                    )}
+
+                    {/* Send Notification */}
+                    <div className="mt-2">
+                      <input
+                        type="text"
+                        placeholder="Send notification"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && e.currentTarget.value) {
+                            handleSendNotification(s.id, e.currentTarget.value);
+                            e.currentTarget.value = "";
+                          }
+                        }}
+                        className="p-2 border rounded text-red-800 mr-2 w-full"
+                      />
+                    </div>
+
+                    {/* Clearance */}
+                    <div className="flex gap-4 mt-2">
+                      <button
+                        onClick={() => handleGrantClearance(s.id)}
+                        disabled={s.clearance}
+                        className={`px-4 py-2 rounded-md text-white ${
+                          s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                        }`}
+                      >
+                        Grant Clearance
+                      </button>
+                      <button
+                        onClick={() => handleRemoveClearance(s.id)}
+                        disabled={!s.clearance}
+                        className={`px-4 py-2 rounded-md text-white ${
+                          !s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                        }`}
+                      >
+                        Remove Clearance
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-red-800">No students found.</p>
+              )}
+            </div>
+          )}
+
+          {/* Accounts Admin Dashboard */}
+          {role === "accountsadmin" && (
+            <div className="space-y-6">
+              <h3 className="text-xl font-semibold text-red-800 mb-4">Accounts Admin Dashboard</h3>
+              <button
+                onClick={downloadFinancialReport}
+                className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 mb-4"
+              >
+                Download Financial Report
+              </button>
+              {allStudents.length ? (
+                allStudents.map((s: StudentData) => (
+                  <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
+                    <p className="text-lg font-medium text-red-800 mb-2">{s.name || "Unnamed"}</p>
+                    <p className="text-red-800">Total Owed: {s.totalOwed.toLocaleString()} JMD</p>
+                    <p className="text-red-800">Total Paid: {s.totalPaid.toLocaleString()} JMD</p>
+                    <p className="text-red-800">Balance: {s.balance.toLocaleString()} JMD</p>
+                    <p className="text-red-800">Status: {s.paymentStatus}</p>
+                    <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
+                    <div className="mt-2">
+                      <h4 className="text-red-800 font-medium">Transactions</h4>
+                      {s.transactions.length ? (
+                        s.transactions.map((txn: Transaction) => (
+                          <p key={txn.id} className="text-red-800">
+                            {new Date(txn.date).toLocaleString()}: {txn.amount.toLocaleString()} JMD - {txn.status}
+                          </p>
+                        ))
+                      ) : (
+                        <p className="text-red-800">No transactions.</p>
+                      )}
+                    </div>
+                    <div className="flex gap-4 mt-2">
+                      <button
+                        onClick={() => handleGrantClearance(s.id)}
+                        disabled={s.clearance}
+                        className={`px-4 py-2 rounded-md text-white ${
+                          s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                        }`}
+                      >
+                        Grant Clearance
+                      </button>
+                      <button
+                        onClick={() => handleRemoveClearance(s.id)}
+                        disabled={!s.clearance}
+                        className={`px-4 py-2 rounded-md text-white ${
+                          !s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                        }`}
+                      >
+                        Remove Clearance
+                      </button>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-red-800">No students found.</p>
               )}
             </div>
           )}
