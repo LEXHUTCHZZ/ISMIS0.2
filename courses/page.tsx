@@ -326,6 +326,7 @@ export default function CoursePage() {
         id: courseRef.id,
         name: courseName,
         fee,
+        coursework: null, // Add a default value for coursework
         subjects: [],
         resources: [],
         tests: [],

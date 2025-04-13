@@ -107,3 +107,20 @@ export interface Resource {
   uploadDate: string;
   courseId: string; // Add courseId to the Resource type
 }
+
+
+
+export interface Coursework {
+  id: string;
+  title: string;
+  description: string;
+  dueDate: string; // ISO string
+  weight: number; // Percentage (e.g., 20 for 20%)
+  type: "activity" | "resource";
+}
+
+export interface Submission {
+  studentId: string;
+  fileUrl: string;
+  submittedAt: string; // ISO string
+}
