@@ -221,6 +221,14 @@ export default function Dashboard() {
         const hour = new Date().getHours();
         setGreeting(hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening");
 
+        // Fetch all courses
+        const coursesSnapshot = await getDocs(collection(db, "courses"));
+        const coursesList = coursesSnapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+        })) as Course[];
+        setAllCourses(coursesList);
+
         // Fetch student data for students
         if (userRole === "student") {
           const studentDocRef = doc(db, "students", currentUser.uid);
@@ -253,14 +261,6 @@ export default function Dashboard() {
           }
         }
 
-        // Fetch all courses
-        const coursesSnapshot = await getDocs(collection(db, "courses"));
-        const coursesList = coursesSnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        })) as Course[];
-        setAllCourses(coursesList);
-
         // Fetch all students for admin/teacher
         if (["teacher", "admin"].includes(userRole)) {
           const studentsSnapshot = await getDocs(collection(db, "students"));
@@ -288,7 +288,7 @@ export default function Dashboard() {
         }
       } catch (err: any) {
         console.error("Error loading dashboard:", err);
-        setError("Failed to load dashboard: " + err.message);
+        setError("Failed to load dashboard: " + (err.message || "Unknown error"));
       } finally {
         setIsLoading(false);
       }
@@ -337,7 +337,7 @@ export default function Dashboard() {
       for (const student of enrolledStudents) {
         const notification: Notification = {
           id: new Date().getTime().toString(),
-          message: `New resource available for ${allCourses.find(c => c.id === courseId)?.name}: ${name}`,
+          message: `New resource available for ${allCourses.find(c => c.id === courseId)?.name || "a course"}: ${name}`,
           date: new Date().toISOString(),
           read: false,
           type: "resource"
@@ -448,6 +448,42 @@ export default function Dashboard() {
     } catch (err: any) {
       console.error("Error updating grade:", err);
       alert("Failed to update grade: " + err.message);
+    }
+  };
+
+  // ADMIN FUNCTIONS
+  const handleClearanceToggle = async (studentId: string, hasClearance: boolean) => {
+    if (role !== "admin") return;
+    try {
+      await updateDoc(doc(db, "students", studentId), {
+        hasClearance: !hasClearance
+      });
+      setAllStudents(allStudents.map(student => 
+        student.id === studentId ? { ...student, hasClearance: !hasClearance } : student
+      ));
+      alert(`Clearance ${!hasClearance ? "granted" : "revoked"} successfully`);
+    } catch (err: any) {
+      console.error("Error updating clearance:", err);
+      alert("Failed to update clearance: " + err.message);
+    }
+  };
+
+  const handleDeleteAccount = async (userId: string) => {
+    if (role !== "admin") return;
+    if (!confirm("Are you sure you want to delete this account? This action cannot be undone.")) return;
+    
+    try {
+      // Delete user document
+      await deleteDoc(doc(db, "users", userId));
+      
+      // Delete student document if exists
+      await deleteDoc(doc(db, "students", userId));
+      
+      setAllStudents(allStudents.filter(student => student.id !== userId));
+      alert("Account deleted successfully");
+    } catch (err: any) {
+      console.error("Error deleting account:", err);
+      alert("Failed to delete account: " + err.message);
     }
   };
 
@@ -668,7 +704,7 @@ export default function Dashboard() {
                   {allStudents.filter(student => 
                     student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
                     student.email?.toLowerCase().includes(searchTerm.toLowerCase())
-                  ).length ? (
+                  ).length > 0 ? (
                     allStudents
                       .filter(student => 
                         student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
@@ -791,7 +827,50 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <h3 className="text-lg font-semibold text-red-800 mb-2">Recent Resources</h3>
+                  <h3 className="text-lg font-semibold text-red-800 mb-2">Student Management</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white">
+                      <thead>
+                        <tr className="bg-red-800 text-white">
+                          <th className="py-2 px-4">Name</th>
+                          <th className="py-2 px-4">Email</th>
+                          <th className="py-2 px-4">Clearance</th>
+                          <th className="py-2 px-4">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allStudents.map((student) => (
+                          <tr key={student.id} className="border-b">
+                            <td className="py-2 px-4">{student.name}</td>
+                            <td className="py-2 px-4">{student.email}</td>
+                            <td className="py-2 px-4">
+                              {student.clearance ? (
+                                <span className="text-green-600">Granted</span>
+                              ) : (
+                                <span className="text-red-600">Not Granted</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-4 space-x-2">
+                              <button
+                                onClick={() => handleClearanceToggle(student.id, student.clearance || false)}
+                                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                              >
+                                {student.clearance ? "Revoke" : "Grant"} Clearance
+                              </button>
+                              <button
+                                onClick={() => handleDeleteAccount(student.id)}
+                                className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                              >
+                                Delete Account
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <h3 className="text-lg font-semibold text-red-800 mt-6 mb-2">Recent Resources</h3>
                   <div className="overflow-x-auto">
                     <table className="min-w-full bg-white">
                       <thead>
