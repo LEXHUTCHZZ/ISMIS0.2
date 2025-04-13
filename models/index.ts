@@ -46,7 +46,6 @@ export interface StudentData {
   homeAddress?: string;
   profilePicture?: string;
 }
-
 export interface Course {
   id: string;
   name: string;
@@ -54,6 +53,7 @@ export interface Course {
   subjects: Subject[];
   resources: Resource[];
   tests: Test[];
+  coursework: Coursework[]; // Add this line
 }
 
 export interface Resource {
@@ -114,13 +114,27 @@ export interface Coursework {
   id: string;
   title: string;
   description: string;
-  dueDate: string; // ISO string
-  weight: number; // Percentage (e.g., 20 for 20%)
-  type: "activity" | "resource";
+  dueDate: string;
+  weight: number;
+  type: string;
 }
 
 export interface Submission {
   studentId: string;
   fileUrl: string;
   submittedAt: string; // ISO string
+}
+
+export interface TestResult {
+  studentId: string;
+  score: number; // Percentage score (e.g., 85 for 85%)
+  submittedAt: string; // ISO string
+}
+export interface TestResults {
+  testId: string;
+  results: TestResult[];
+}
+export interface TestResults {
+  testId: string;
+  results: TestResult[];
 }
