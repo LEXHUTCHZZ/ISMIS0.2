@@ -178,17 +178,40 @@ export default function Dashboard() {
           // Fetch student data and notifications
           if (hasPermission(userRole, ["student", "teacher"])) {
             const studentDoc = doc(db, "students", currentUser.uid);
-            unsubscribeStudent = onSnapshot(studentDoc, (snap) => {
-              if (snap.exists()) {
+            unsubscribeStudent = onSnapshot(studentDoc, async (snap) => {
+              if (!snap.exists()) {
+                // Create default student document
+                const defaultStudent: StudentData = {
+                  id: currentUser.uid,
+                  name: data.name || "Student",
+                  email: currentUser.email || "",
+                  courses: [],
+                  transactions: [],
+                  notifications: [],
+                  totalOwed: 0,
+                  totalPaid: 0,
+                  balance: 0,
+                  paymentStatus: "pending",
+                  clearance: false,
+                  lecturerId: "", // Provide a default value for lecturerId
+                };
+                try {
+                  await setDoc(studentDoc, defaultStudent);
+                  setStudentData(defaultStudent);
+                } catch (e) {
+                  console.error("Error creating student document:", e);
+                  setError("Failed to initialize student profile");
+                  setStudentData(null);
+                }
+              } else {
                 const student = snap.data() as StudentData;
                 setStudentData({
                   ...student,
                   id: currentUser.uid,
                   transactions: student.transactions || [],
                   notifications: student.notifications || [],
+                  courses: student.courses || [], // Ensure courses is an array
                 });
-              } else {
-                setStudentData(null);
               }
             });
 
@@ -204,8 +227,40 @@ export default function Dashboard() {
                 );
               });
 
-              // Fetch test responses and submissions for student
+              // Fetch courses, test responses, and submissions for student
               const coursesSnap = await getDocs(collection(db, "courses"));
+              const courses: Course[] = await Promise.all(
+                coursesSnap.docs.map(async (d) => {
+                  const course = d.data() as Omit<Course, "id" | "resources" | "tests" | "coursework">;
+                  const resourcesSnap = await getDocs(collection(db, "courses", d.id, "resources"));
+                  const resources = resourcesSnap.docs.map((r) => ({
+                    id: r.id,
+                    ...r.data(),
+                  })) as Resource[];
+
+                  const testsSnap = await getDocs(collection(db, "courses", d.id, "tests"));
+                  const tests = testsSnap.docs.map((t) => ({
+                    id: t.id,
+                    ...t.data(),
+                  })) as Test[];
+
+                  const courseworkSnap = await getDocs(collection(db, "courses", d.id, "coursework"));
+                  const coursework = courseworkSnap.docs.map((c) => ({
+                    id: c.id,
+                    ...c.data(),
+                  })) as Coursework[];
+
+                  return {
+                    id: d.id,
+                    ...course,
+                    resources: resources || [],
+                    tests: tests || [],
+                    coursework: coursework || [],
+                  } as Course;
+                })
+              );
+              setAllCourses(courses);
+
               for (const d of coursesSnap.docs) {
                 const testsSnap = await getDocs(collection(db, "courses", d.id, "tests"));
                 for (const t of testsSnap.docs) {
@@ -257,6 +312,7 @@ export default function Dashboard() {
                   clearance: studentData.clearance ?? false,
                   lastOnline: studentData.lastOnline || "",
                   active: studentData.active ?? true,
+                  courses: studentData.courses || [],
                 };
               })
             );
@@ -269,38 +325,41 @@ export default function Dashboard() {
               }
             }
 
-            const coursesSnap = await getDocs(collection(db, "courses"));
-            const courses = await Promise.all(
-              coursesSnap.docs.map(async (d) => {
-                const course = d.data() as Omit<Course, "id" | "resources" | "tests" | "coursework">;
-                const resourcesSnap = await getDocs(collection(db, "courses", d.id, "resources"));
-                const resources = resourcesSnap.docs.map((r) => ({
-                  id: r.id,
-                  ...r.data(),
-                })) as Resource[];
+            // Fetch courses for non-students (already fetched for students above)
+            if (userRole !== "student") {
+              const coursesSnap = await getDocs(collection(db, "courses"));
+              const courses = await Promise.all(
+                coursesSnap.docs.map(async (d) => {
+                  const course = d.data() as Omit<Course, "id" | "resources" | "tests" | "coursework">;
+                  const resourcesSnap = await getDocs(collection(db, "courses", d.id, "resources"));
+                  const resources = resourcesSnap.docs.map((r) => ({
+                    id: r.id,
+                    ...r.data(),
+                  })) as Resource[];
 
-                const testsSnap = await getDocs(collection(db, "courses", d.id, "tests"));
-                const tests = testsSnap.docs.map((t) => ({
-                  id: t.id,
-                  ...t.data(),
-                })) as Test[];
+                  const testsSnap = await getDocs(collection(db, "courses", d.id, "tests"));
+                  const tests = testsSnap.docs.map((t) => ({
+                    id: t.id,
+                    ...t.data(),
+                  })) as Test[];
 
-                const courseworkSnap = await getDocs(collection(db, "courses", d.id, "coursework"));
-                const coursework = courseworkSnap.docs.map((c) => ({
-                  id: c.id,
-                  ...c.data(),
-                })) as Coursework[];
+                  const courseworkSnap = await getDocs(collection(db, "courses", d.id, "coursework"));
+                  const coursework = courseworkSnap.docs.map((c) => ({
+                    id: c.id,
+                    ...c.data(),
+                  })) as Coursework[];
 
-                return {
-                  id: d.id,
-                  ...course,
-                  resources: resources || [],
-                  tests: tests || [],
-                  coursework: coursework || [],
-                } as Course;
-              })
-            );
-            setAllCourses(courses);
+                  return {
+                    id: d.id,
+                    ...course,
+                    resources: resources || [],
+                    tests: tests || [],
+                    coursework: coursework || [],
+                  } as Course;
+                })
+              );
+              setAllCourses(courses);
+            }
           }
 
           // Cleanup for student and notifications subscriptions
@@ -769,165 +828,160 @@ export default function Dashboard() {
             <div className="space-y-8">
               {!studentData ? (
                 <p className="text-gray-600 text-center bg-white p-6 rounded-lg shadow">
-                  No profile found. Contact support.
+                  Initializing profile, please wait...
                 </p>
               ) : (
                 <div className="space-y-6">
                   <div className="bg-white p-6 rounded-lg shadow">
                     <h3 className="text-xl font-semibold text-blue-600 mb-4">My Courses</h3>
-                    {studentData.courses?.length ? (
-                      studentData.courses.map((c) => {
-                        const course = allCourses.find((ac) => ac.name === c.name);
-                        return (
-                          course && (
-                            <div key={c.name} className="mb-6">
-                              <h4 className="text-lg font-medium text-blue-600 mb-3">{c.name}</h4>
-                              <div className="space-y-4">
-                                <div>
-                                  <h5 className="text-blue-600 font-medium">Resources</h5>
-                                  {course.resources?.length ? (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                                      {course.resources.map((r) => (
-                                        <div
-                                          key={r.id}
-                                          className="p-4 bg-gray-50 rounded-lg flex items-center space-x-3 hover:bg-gray-100"
+                    {allCourses.length ? (
+                      allCourses.map((course) => (
+                        <div key={course.id} className="mb-6">
+                          <h4 className="text-lg font-medium text-blue-600 mb-3">{course.name}</h4>
+                          <div className="space-y-4">
+                            <div>
+                              <h5 className="text-blue-600 font-medium">Resources</h5>
+                              {course.resources?.length ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                                  {course.resources.map((r) => (
+                                    <div
+                                      key={r.id}
+                                      className="p-4 bg-gray-50 rounded-lg flex items-center space-x-3 hover:bg-gray-100"
+                                    >
+                                      <span className="text-blue-500">📄</span>
+                                      <div>
+                                        <p className="text-blue-600 font-medium">{r.name}</p>
+                                        <p className="text-sm text-gray-600">{r.type}</p>
+                                        <p className="text-sm text-gray-600">
+                                          Uploaded: {new Date(r.uploadDate).toLocaleDateString()}
+                                        </p>
+                                        <a
+                                          href={r.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="text-blue-600 underline text-sm"
                                         >
-                                          <span className="text-blue-500">📄</span>
-                                          <div>
-                                            <p className="text-blue-600 font-medium">{r.name}</p>
-                                            <p className="text-sm text-gray-600">{r.type}</p>
-                                            <p className="text-sm text-gray-600">
-                                              Uploaded: {new Date(r.uploadDate).toLocaleDateString()}
-                                            </p>
-                                            <a
-                                              href={r.url}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                              className="text-blue-600 underline text-sm"
-                                            >
-                                              View
-                                            </a>
-                                          </div>
-                                        </div>
-                                      ))}
+                                          View
+                                        </a>
+                                      </div>
                                     </div>
-                                  ) : (
-                                    <p className="text-gray-600">No resources available</p>
-                                  )}
+                                  ))}
                                 </div>
-                                <div>
-                                  <h5 className="text-blue-600 font-medium">Tests</h5>
-                                  {course.tests?.length ? (
-                                    <div className="space-y-3 mt-2">
-                                      {course.tests.map((t) => (
-                                        <div key={t.id} className="p-4 bg-gray-50 rounded-lg">
-                                          <p className="text-blue-600 font-medium">{t.title}</p>
-                                          {testResponses[t.id]?.submittedAt ? (
-                                            <p className="text-gray-600">
-                                              Submitted: {testResponses[t.id].submittedAt ? new Date(testResponses[t.id].submittedAt || "").toLocaleString() : "N/A"}
-                                              <br />
-                                              Score: {testResponses[t.id].score?.toFixed(2) || "N/A"}%
-                                            </p>
-                                          ) : (
-                                            <>
-                                              {t.questions.map((q, i) => (
-                                                <div key={i} className="mt-2">
-                                                  <p className="text-gray-600">{i + 1}. {q.question}</p>
-                                                  {q.options?.length > 1 ? (
-                                                    q.options.map((o, j) => (
-                                                      <label key={j} className="block text-gray-600">
-                                                        <input
-                                                          type="radio"
-                                                          name={`${t.id}-${i}`}
-                                                          value={o}
-                                                          checked={testResponses[t.id]?.answers?.[i] === o}
-                                                          onChange={(e) =>
-                                                            handleTestAnswerChange(t.id, i, e.target.value)
-                                                          }
-                                                          className="mr-2"
-                                                        />
-                                                        {o}
-                                                      </label>
-                                                    ))
-                                                  ) : (
+                              ) : (
+                                <p className="text-gray-600">No resources available</p>
+                              )}
+                            </div>
+                            <div>
+                              <h5 className="text-blue-600 font-medium">Tests</h5>
+                              {course.tests?.length ? (
+                                <div className="space-y-3 mt-2">
+                                  {course.tests.map((t) => (
+                                    <div key={t.id} className="p-4 bg-gray-50 rounded-lg">
+                                      <p className="text-blue-600 font-medium">{t.title}</p>
+                                      {testResponses[t.id]?.submittedAt ? (
+                                        <p className="text-gray-600">
+                                          Submitted: {testResponses[t.id].submittedAt ? new Date(testResponses[t.id].submittedAt || "").toLocaleString() : "N/A"}
+                                          <br />
+                                          Score: {testResponses[t.id].score?.toFixed(2) || "N/A"}%
+                                        </p>
+                                      ) : (
+                                        <>
+                                          {t.questions.map((q, i) => (
+                                            <div key={i} className="mt-2">
+                                              <p className="text-gray-600">{i + 1}. {q.question}</p>
+                                              {q.options?.length > 1 ? (
+                                                q.options.map((o, j) => (
+                                                  <label key={j} className="block text-gray-600">
                                                     <input
-                                                      type="text"
-                                                      value={testResponses[t.id]?.answers?.[i] || ""}
+                                                      type="radio"
+                                                      name={`${t.id}-${i}`}
+                                                      value={o}
+                                                      checked={testResponses[t.id]?.answers?.[i] === o}
                                                       onChange={(e) =>
                                                         handleTestAnswerChange(t.id, i, e.target.value)
                                                       }
-                                                      className="w-full p-2 border rounded text-gray-600"
-                                                      placeholder="Your answer"
+                                                      className="mr-2"
                                                     />
-                                                  )}
-                                                </div>
-                                              ))}
-                                              <button
-                                                onClick={() => handleSubmitTest(course.id, t.id)}
-                                                className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
-                                                disabled={
-                                                  !testResponses[t.id]?.answers ||
-                                                  Object.keys(testResponses[t.id]?.answers || {}).length !==
-                                                    t.questions.length
-                                                }
-                                              >
-                                                Submit Test
-                                              </button>
-                                            </>
-                                          )}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <p className="text-gray-600">No tests available</p>
-                                  )}
-                                </div>
-                                <div>
-                                  <h5 className="text-blue-600 font-medium">Coursework</h5>
-                                  {course.coursework?.length ? (
-                                    <div className="space-y-3 mt-2">
-                                      {course.coursework.map((cw) => (
-                                        <div key={cw.id} className="p-4 bg-gray-50 rounded-lg">
-                                          <p className="text-blue-600 font-medium">{cw.title}</p>
-                                          <p className="text-gray-600">{cw.description}</p>
-                                          <p className="text-gray-600">
-                                            Due: {new Date(cw.dueDate).toLocaleString()}
-                                          </p>
-                                          <p className="text-gray-600">Weight: {cw.weight}%</p>
-                                          {submissions[cw.id] ? (
-                                            <p className="text-gray-600">
-                                              Submitted: {new Date(submissions[cw.id].submittedAt).toLocaleString()}
-                                            </p>
-                                          ) : (
-                                            <div className="mt-2">
-                                              <input
-                                                type="text"
-                                                placeholder="Submission URL"
-                                                onKeyDown={(e) =>
-                                                  e.key === "Enter" &&
-                                                  e.currentTarget.value &&
-                                                  handleSubmitCoursework(course.id, cw.id, e.currentTarget.value).then(
-                                                    () => (e.currentTarget.value = "")
-                                                  )
-                                                }
-                                                className="w-full p-2 border rounded text-gray-600"
-                                              />
+                                                    {o}
+                                                  </label>
+                                                ))
+                                              ) : (
+                                                <input
+                                                  type="text"
+                                                  value={testResponses[t.id]?.answers?.[i] || ""}
+                                                  onChange={(e) =>
+                                                    handleTestAnswerChange(t.id, i, e.target.value)
+                                                  }
+                                                  className="w-full p-2 border rounded text-gray-600"
+                                                  placeholder="Your answer"
+                                                />
+                                              )}
                                             </div>
-                                          )}
-                                        </div>
-                                      ))}
+                                          ))}
+                                          <button
+                                            onClick={() => handleSubmitTest(course.id, t.id)}
+                                            className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
+                                            disabled={
+                                              !testResponses[t.id]?.answers ||
+                                              Object.keys(testResponses[t.id]?.answers || {}).length !==
+                                                t.questions.length
+                                            }
+                                          >
+                                            Submit Test
+                                          </button>
+                                        </>
+                                      )}
                                     </div>
-                                  ) : (
-                                    <p className="text-gray-600">No coursework available</p>
-                                  )}
+                                  ))}
                                 </div>
-                              </div>
+                              ) : (
+                                <p className="text-gray-600">No tests available</p>
+                              )}
                             </div>
-                          )
-                        );
-                      })
+                            <div>
+                              <h5 className="text-blue-600 font-medium">Coursework</h5>
+                              {course.coursework?.length ? (
+                                <div className="space-y-3 mt-2">
+                                  {course.coursework.map((cw) => (
+                                    <div key={cw.id} className="p-4 bg-gray-50 rounded-lg">
+                                      <p className="text-blue-600 font-medium">{cw.title}</p>
+                                      <p className="text-gray-600">{cw.description}</p>
+                                      <p className="text-gray-600">
+                                        Due: {new Date(cw.dueDate).toLocaleString()}
+                                      </p>
+                                      <p className="text-gray-600">Weight: {cw.weight}%</p>
+                                      {submissions[cw.id] ? (
+                                        <p className="text-gray-600">
+                                          Submitted: {new Date(submissions[cw.id].submittedAt).toLocaleString()}
+                                        </p>
+                                      ) : (
+                                        <div className="mt-2">
+                                          <input
+                                            type="text"
+                                            placeholder="Submission URL"
+                                            onKeyDown={(e) =>
+                                              e.key === "Enter" &&
+                                              e.currentTarget.value &&
+                                              handleSubmitCoursework(course.id, cw.id, e.currentTarget.value).then(
+                                                () => (e.currentTarget.value = "")
+                                              )
+                                            }
+                                            className="w-full p-2 border rounded text-gray-600"
+                                          />
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-gray-600">No coursework available</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))
                     ) : (
-                      <p className="text-gray-600">No courses enrolled</p>
+                      <p className="text-gray-600">No courses available. Contact your instructor.</p>
                     )}
                   </div>
                 </div>
