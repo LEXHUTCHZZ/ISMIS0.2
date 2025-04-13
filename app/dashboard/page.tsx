@@ -349,6 +349,58 @@ export default function Dashboard() {
     }
   };
 
+  const handleGradeUpdate = async (
+    studentId: string,
+    courseId: string,
+    subjectName: string,
+    field: string,
+    value: string
+  ) => {
+    if (role !== "teacher") return;
+    
+    try {
+      const studentRef = doc(db, "students", studentId);
+      const studentSnap = await getDoc(studentRef);
+      if (!studentSnap.exists()) return;
+
+      const studentData = studentSnap.data() as StudentData;
+      const updatedCourses = studentData.courses?.map((course) => {
+        if (course.id === courseId) {
+          const updatedSubjects = course.subjects?.map((subject) => {
+            if (subject.name === subjectName) {
+              const updatedGrades = { ...subject.grades, [field]: value };
+              
+              // Calculate final grade (40% classwork, 60% exam)
+              const classworkKeys = Object.keys(updatedGrades).filter(k => k.startsWith("C"));
+              const classworkValues = classworkKeys
+                .map(k => parseFloat(updatedGrades[k] || "0"))
+                .filter(v => !isNaN(v));
+              const exam = parseFloat(updatedGrades.exam || "0");
+              
+              if (classworkValues.length && !isNaN(exam)) {
+                const classworkAvg = classworkValues.reduce((sum, v) => sum + v, 0) / classworkValues.length;
+                updatedGrades.final = (classworkAvg * 0.4 + exam * 0.6).toFixed(2);
+              }
+              
+              return { ...subject, grades: updatedGrades };
+            }
+            return subject;
+          });
+          return { ...course, subjects: updatedSubjects };
+        }
+        return course;
+      });
+
+      await updateDoc(studentRef, { courses: updatedCourses });
+      setAllStudents(allStudents.map((s) => 
+        s.id === studentId ? { ...s, courses: updatedCourses || [] } : s
+      ));
+    } catch (err: any) {
+      console.error("Error updating grade:", err);
+      alert("Failed to update grade: " + err.message);
+    }
+  };
+
   // STUDENT FUNCTIONS
   const handlePaymentSuccess = async (amount: number) => {
     if (!studentData || !user) return;
@@ -556,36 +608,111 @@ export default function Dashboard() {
                   
                   <input
                     type="text"
-                    placeholder="Search students..."
+                    placeholder="Search students by name or email..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
                     className="p-2 border rounded text-red-800 w-full mb-4"
                   />
                   
-                  {allStudents.length ? (
-                    allStudents.map((student) => (
-                      <div key={student.id} className="mb-6 border-b pb-4">
-                        <h3 className="text-lg font-medium text-red-800">
-                          {student.name} ({student.email})
-                        </h3>
-                        
-                        {allCourses.map((course) => (
-                          <div key={course.id} className="mt-4 pl-4">
-                            <h4 className="font-medium">{course.name}</h4>
-                            
-                            {/* Add Resource Form */}
-                            <div className="mt-2">
-                              <ResourceForm 
-                                courseId={course.id} 
-                                onAddResource={handleAddResource} 
-                              />
+                  {/* Filter students based on search term */}
+                  {allStudents.filter(student => 
+                    student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                    student.email?.toLowerCase().includes(searchTerm.toLowerCase())
+                  ).length ? (
+                    allStudents
+                      .filter(student => 
+                        student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                        student.email?.toLowerCase().includes(searchTerm.toLowerCase())
+                      )
+                      .map((student) => (
+                        <div key={student.id} className="mb-6 border-b pb-4">
+                          <h3 className="text-lg font-medium text-red-800">
+                            {student.name} ({student.email})
+                          </h3>
+                          
+                          {allCourses.map((course) => (
+                            <div key={course.id} className="mt-4 pl-4">
+                              <h4 className="font-medium">{course.name}</h4>
+                              
+                              {/* Add Resource Form */}
+                              <div className="mt-2">
+                                <ResourceForm 
+                                  courseId={course.id} 
+                                  onAddResource={handleAddResource} 
+                                />
+                              </div>
+
+                              {/* Grade Input Section */}
+                              {student.courses?.find(c => c.id === course.id)?.subjects?.map((subject) => (
+                                <div key={subject.name} className="mt-4 border-l-2 border-red-200 pl-4">
+                                  <h5 className="font-medium">{subject.name}</h5>
+                                  <div className="mt-2 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-24">Classwork 1:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={subject.grades?.C1 || ""}
+                                        onChange={(e) => handleGradeUpdate(
+                                          student.id,
+                                          course.id,
+                                          subject.name,
+                                          "C1",
+                                          e.target.value
+                                        )}
+                                        className="p-1 border rounded text-red-800 w-20"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-24">Classwork 2:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={subject.grades?.C2 || ""}
+                                        onChange={(e) => handleGradeUpdate(
+                                          student.id,
+                                          course.id,
+                                          subject.name,
+                                          "C2",
+                                          e.target.value
+                                        )}
+                                        className="p-1 border rounded text-red-800 w-20"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-24">Exam:</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="100"
+                                        value={subject.grades?.exam || ""}
+                                        onChange={(e) => handleGradeUpdate(
+                                          student.id,
+                                          course.id,
+                                          subject.name,
+                                          "exam",
+                                          e.target.value
+                                        )}
+                                        className="p-1 border rounded text-red-800 w-20"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="w-24">Final Grade:</span>
+                                      <span className="font-medium">
+                                        {subject.grades?.final || "N/A"}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    ))
+                          ))}
+                        </div>
+                      ))
                   ) : (
-                    <p className="text-gray-600">No students found</p>
+                    <p className="text-gray-600">No matching students found</p>
                   )}
                 </div>
               </div>
