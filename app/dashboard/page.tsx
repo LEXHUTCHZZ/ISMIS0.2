@@ -179,6 +179,7 @@ export default function Dashboard() {
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
+  const [allResources, setAllResources] = useState<Record<string, Resource[]>>({});
   const [role, setRole] = useState<Role | "">("");
   const [username, setUsername] = useState("");
   const [greeting, setGreeting] = useState("");
@@ -226,6 +227,21 @@ export default function Dashboard() {
           const studentSnap = await getDoc(studentDocRef);
           if (studentSnap.exists()) {
             const fetchedStudentData = studentSnap.data() as StudentData;
+            
+            // Fetch resources for each course the student is enrolled in
+            const resources: Record<string, Resource[]> = {};
+            if (fetchedStudentData.courses) {
+              for (const course of fetchedStudentData.courses) {
+                const resourcesSnapshot = await getDocs(
+                  collection(db, "courses", course.id, "resources")
+                );
+                resources[course.id] = resourcesSnapshot.docs.map(doc => ({
+                  id: doc.id,
+                  ...doc.data()
+                })) as Resource[];
+              }
+            }
+            
             setStudentData({
               ...fetchedStudentData,
               id: currentUser.uid,
@@ -233,6 +249,7 @@ export default function Dashboard() {
               notifications: fetchedStudentData.notifications || [],
               courses: fetchedStudentData.courses || [],
             });
+            setAllResources(resources);
           }
         }
 
@@ -252,6 +269,22 @@ export default function Dashboard() {
             ...doc.data(),
           })) as StudentData[];
           setAllStudents(studentsList);
+        }
+
+        // Admin-specific data fetching
+        if (userRole === "admin") {
+          // Fetch all resources for admin view
+          const resources: Record<string, Resource[]> = {};
+          for (const course of coursesList) {
+            const resourcesSnapshot = await getDocs(
+              collection(db, "courses", course.id, "resources")
+            );
+            resources[course.id] = resourcesSnapshot.docs.map(doc => ({
+              id: doc.id,
+              ...doc.data()
+            })) as Resource[];
+          }
+          setAllResources(resources);
         }
       } catch (err: any) {
         console.error("Error loading dashboard:", err);
@@ -291,12 +324,29 @@ export default function Dashboard() {
       );
 
       // Update local state
-      setAllCourses(allCourses.map(c => 
-        c.id === courseId ? { 
-          ...c, 
-          resources: [...(c.resources || []), { ...resourceData, id: resourceRef.id }] 
-        } : c
-      ));
+      setAllResources(prev => ({
+        ...prev,
+        [courseId]: [...(prev[courseId] || []), { ...resourceData, id: resourceRef.id }]
+      }));
+
+      // Notify students enrolled in this course
+      const enrolledStudents = allStudents.filter(student => 
+        student.courses?.some(c => c.id === courseId)
+      );
+      
+      for (const student of enrolledStudents) {
+        const notification: Notification = {
+          id: new Date().getTime().toString(),
+          message: `New resource available for ${allCourses.find(c => c.id === courseId)?.name}: ${name}`,
+          date: new Date().toISOString(),
+          read: false,
+          type: "resource"
+        };
+        
+        await updateDoc(doc(db, "students", student.id), {
+          notifications: [...(student.notifications || []), notification]
+        });
+      }
 
       alert("Resource added successfully");
     } catch (err: any) {
@@ -525,9 +575,9 @@ export default function Dashboard() {
                         {/* Resources */}
                         <div className="mt-2">
                           <h4 className="font-medium text-red-800">Resources</h4>
-                          {course.resources?.length ? (
+                          {allResources[course.id]?.length ? (
                             <ul className="list-disc pl-5 mt-2">
-                              {course.resources.map((resource) => (
+                              {allResources[course.id].map((resource) => (
                                 <li key={resource.id} className="mb-1">
                                   <a 
                                     href={resource.url} 
@@ -714,6 +764,72 @@ export default function Dashboard() {
                   ) : (
                     <p className="text-gray-600">No matching students found</p>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* ADMIN DASHBOARD */}
+            {role === "admin" && (
+              <div className="space-y-6">
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h2 className="text-xl font-semibold text-red-800 mb-4">System Overview</h2>
+                  
+                  <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-red-100 p-4 rounded">
+                      <h3 className="font-medium text-red-800">Total Students</h3>
+                      <p className="text-2xl font-bold">{allStudents.length}</p>
+                    </div>
+                    <div className="bg-red-100 p-4 rounded">
+                      <h3 className="font-medium text-red-800">Total Courses</h3>
+                      <p className="text-2xl font-bold">{allCourses.length}</p>
+                    </div>
+                    <div className="bg-red-100 p-4 rounded">
+                      <h3 className="font-medium text-red-800">Total Resources</h3>
+                      <p className="text-2xl font-bold">
+                        {Object.values(allResources).reduce((sum, resources) => sum + resources.length, 0)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <h3 className="text-lg font-semibold text-red-800 mb-2">Recent Resources</h3>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white">
+                      <thead>
+                        <tr className="bg-red-800 text-white">
+                          <th className="py-2 px-4">Course</th>
+                          <th className="py-2 px-4">Resource Name</th>
+                          <th className="py-2 px-4">Type</th>
+                          <th className="py-2 px-4">Date Added</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(allResources).flatMap(([courseId, resources]) =>
+                          resources.map(resource => {
+                            const course = allCourses.find(c => c.id === courseId);
+                            return (
+                              <tr key={resource.id} className="border-b">
+                                <td className="py-2 px-4">{course?.name || "Unknown Course"}</td>
+                                <td className="py-2 px-4">
+                                  <a 
+                                    href={resource.url} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:underline"
+                                  >
+                                    {resource.name}
+                                  </a>
+                                </td>
+                                <td className="py-2 px-4">{resource.type}</td>
+                                <td className="py-2 px-4">
+                                  {new Date(resource.uploadDate).toLocaleDateString()}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </div>
             )}

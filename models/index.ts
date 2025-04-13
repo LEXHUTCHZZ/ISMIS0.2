@@ -113,6 +113,14 @@ export interface Notification {
   read: boolean;
 }
 
+export interface Notification {
+  id: string;
+  message: string;
+  date: string;
+  read: boolean;
+  type?: string; // Added optional 'type' property
+}
+
 export interface Transaction {
   id: string;
   amount: number;
