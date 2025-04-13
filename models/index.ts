@@ -9,8 +9,13 @@ export interface TestQuestion {
 
 export interface Test {
   id: string;
+  courseId: string; // Added courseId property
   title: string;
-  questions: TestQuestion[];
+  questions: {
+    question: string;
+    options: string[];
+    correctAnswer: string;
+  }[];
   createdAt: string;
 }
 
