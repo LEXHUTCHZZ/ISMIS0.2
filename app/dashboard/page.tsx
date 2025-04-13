@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { auth, db } from "../../lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { onAuthStateChanged, sendPasswordResetEmail } from "firebase/auth";
 import {
   doc,
   getDoc,
@@ -11,6 +11,7 @@ import {
   getDocs,
   setDoc,
   addDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -38,9 +39,7 @@ import {
   sanitizeTest,
   sanitizeTransaction,
   sanitizeNotification,
-} from "../../utils/firestoreSanitizer"; // Ensure this file exists or update the path
-
-// If the file does not exist, create it at the specified path or update the import path to the correct location.
+} from "../../utils/firestoreSanitizer";
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
@@ -428,6 +427,18 @@ export default function Dashboard() {
     }
   };
 
+  const handleDeleteCourse = async (courseId: string) => {
+    if (role !== "admin") return;
+    try {
+      await deleteDoc(doc(db, "courses", courseId));
+      setAllCourses(allCourses.filter((c) => c.id !== courseId));
+      alert("Course deleted!");
+    } catch (error: any) {
+      console.error("Error deleting course:", error);
+      alert("Failed to delete course: " + error.message);
+    }
+  };
+
   const handleAddStudent = async (name: string, email: string) => {
     if (role !== "admin") return;
     try {
@@ -456,6 +467,18 @@ export default function Dashboard() {
     } catch (error: any) {
       console.error("Error adding student:", error);
       alert("Failed to add student: " + error.message);
+    }
+  };
+
+  const handleDeleteStudent = async (studentId: string) => {
+    if (role !== "admin") return;
+    try {
+      await deleteDoc(doc(db, "students", studentId));
+      setAllStudents(allStudents.filter((s) => s.id !== studentId));
+      alert("Student deleted!");
+    } catch (error: any) {
+      console.error("Error deleting student:", error);
+      alert("Failed to delete student: " + error.message);
     }
   };
 
@@ -533,6 +556,17 @@ export default function Dashboard() {
     }
   };
 
+  const handleResetPassword = async (email: string) => {
+    if (role !== "admin") return;
+    try {
+      await sendPasswordResetEmail(auth, email);
+      alert("Password reset email sent!");
+    } catch (error: any) {
+      console.error("Error sending password reset email:", error);
+      alert("Failed to send password reset email: " + error.message);
+    }
+  };
+
   const downloadFinancialReport = () => {
     const doc = new jsPDF();
     doc.setFontSize(16);
@@ -567,23 +601,16 @@ export default function Dashboard() {
       <div className="w-64 bg-white shadow-md p-4">
         <h3 className="text-xl font-semibold text-red-800 mb-4">SMIS Menu</h3>
         <ul className="space-y-2">
-          <li><Link href="/dashboard" className="text-red-800 hover:underline">Dashboard</Link></li>
-          <li><Link href="/profile" className="text-red-800 hover:underline">Profile</Link></li>
-          {role === "teacher" && (
-            <li>
-              <Link href="/dashboard/students" className="text-red-800 hover:underline">Students</Link>
-            </li>
-          )}
-          {role === "admin" && (
-            <li>
-              <Link href="/dashboard/management" className="text-red-800 hover:underline">Management</Link>
-            </li>
-          )}
-          {role === "accountsadmin" && (
-            <li>
-              <Link href="/dashboard/payments" className="text-red-800 hover:underline">Payments</Link>
-            </li>
-          )}
+          <li>
+            <Link href="/dashboard" className="text-red-800 hover:underline">
+              Dashboard
+            </Link>
+          </li>
+          <li>
+            <Link href="/profile" className="text-red-800 hover:underline">
+              Profile
+            </Link>
+          </li>
         </ul>
       </div>
 
@@ -598,7 +625,9 @@ export default function Dashboard() {
                 onError={(e) => (e.currentTarget.src = "https://via.placeholder.com/150")}
               />
               <div>
-                <h2 className="text-2xl font-bold text-red-800">{greeting}, {username}</h2>
+                <h2 className="text-2xl font-bold text-red-800">
+                  {greeting}, {username}
+                </h2>
                 <p className="text-red-800 capitalize">{role} Dashboard</p>
               </div>
             </div>
@@ -608,20 +637,24 @@ export default function Dashboard() {
           {role === "student" && (
             <div className="space-y-6">
               {!studentData ? (
-                <div className="bg-white p-4 rounded-lg shadow-md">
-                  <p className="text-red-800 text-center">No student profile found. Contact support to set up your account.</p>
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                  <p className="text-red-800 text-center">
+                    No student profile found. Contact support to set up your account.
+                  </p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-6">
-                    <div className="bg-white p-4 rounded-lg shadow-md">
+                    <div className="bg-white p-6 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Notifications</h3>
                       {studentData.notifications.length ? (
                         studentData.notifications.map((notif: Notification) => (
-                          <div key={notif.id || notif.date} className="flex justify-between items-center mb-2">
-                            <p className={`text-red-800 ${notif.read ? "opacity-50" : "font-bold"}`}>
-                              {new Date(notif.date).toLocaleString()}: {notif.message || "No message"}
-                            </p>
+                          <div key={notif.id || notif.date} className="flex justify-between items-center mb-4 p-4 bg-gray-50 rounded-md">
+                            <div>
+                              <p className={`text-red-800 ${notif.read ? "opacity-50" : "font-bold"}`}>
+                                {new Date(notif.date).toLocaleString()}: {notif.message || "No message"}
+                              </p>
+                            </div>
                             {!notif.read && (
                               <button
                                 onClick={async () => {
@@ -638,7 +671,7 @@ export default function Dashboard() {
                                     });
                                   }
                                 }}
-                                className="text-red-800 hover:underline"
+                                className="text-red-800 hover:underline text-sm"
                               >
                                 Mark as Read
                               </button>
@@ -649,28 +682,30 @@ export default function Dashboard() {
                         <p className="text-red-800">No notifications.</p>
                       )}
                     </div>
-                    <div className="bg-white p-4 rounded-lg shadow-md">
+                    <div className="bg-white p-6 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Your Grades</h3>
                       {studentData.courses && studentData.courses.length > 0 ? (
                         studentData.courses.map((c: Course) => (
-                          <div key={c.id || c.name} className="mb-4">
-                            <p className="text-red-800 font-medium">{c.name || "Unnamed Course"} (Fee: {(c.fee || 0).toLocaleString()} JMD)</p>
+                          <div key={c.id || c.name} className="mb-6">
+                            <p className="text-red-800 font-medium text-lg">
+                              {c.name || "Unnamed Course"} (Fee: {(c.fee || 0).toLocaleString()} JMD)
+                            </p>
                             {c.subjects && Array.isArray(c.subjects) && c.subjects.length > 0 ? (
-                              <table className="w-full mt-2 border-collapse">
+                              <table className="w-full mt-4 border-collapse bg-gray-50 rounded-md">
                                 <thead>
                                   <tr className="bg-red-800 text-white">
-                                    <th className="p-2 border">Subject</th>
-                                    <th className="p-2 border">Classwork</th>
-                                    <th className="p-2 border">Exam</th>
-                                    <th className="p-2 border">Final</th>
-                                    <th className="p-2 border">Comments</th>
+                                    <th className="p-3 border">Subject</th>
+                                    <th className="p-3 border">Classwork</th>
+                                    <th className="p-3 border">Exam</th>
+                                    <th className="p-3 border">Final</th>
+                                    <th className="p-3 border">Comments</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {c.subjects.map((sub: Subject) => (
                                     <tr key={sub.name || Math.random()}>
-                                      <td className="p-2 border text-red-800">{sub.name || "N/A"}</td>
-                                      <td className="p-2 border text-red-800">
+                                      <td className="p-3 border text-red-800">{sub.name || "N/A"}</td>
+                                      <td className="p-3 border text-red-800">
                                         {sub.grades
                                           ? Object.keys(sub.grades)
                                               .filter((k) => k.startsWith("C"))
@@ -678,82 +713,106 @@ export default function Dashboard() {
                                               .join(", ") || "N/A"
                                           : "N/A"}
                                       </td>
-                                      <td className="p-2 border text-red-800">{sub.grades?.exam || "N/A"}</td>
-                                      <td className="p-2 border text-red-800">{sub.grades?.final || "N/A"}</td>
-                                      <td className="p-2 border text-red-800">{sub.comments || "No comments"}</td>
+                                      <td className="p-3 border text-red-800">{sub.grades?.exam || "N/A"}</td>
+                                      <td className="p-3 border text-red-800">{sub.grades?.final || "N/A"}</td>
+                                      <td className="p-3 border text-red-800">{sub.comments || "No comments"}</td>
                                     </tr>
                                   ))}
                                 </tbody>
                               </table>
                             ) : (
-                              <p className="text-red-800">No subjects assigned.</p>
+                              <p className="text-red-800 mt-2">No subjects assigned.</p>
                             )}
-                            <p className="mt-2 text-red-800">Average: {calculateCourseAverage(c.subjects)}</p>
+                            <p className="mt-3 text-red-800 font-medium">
+                              Average: {calculateCourseAverage(c.subjects)}
+                            </p>
                           </div>
                         ))
                       ) : (
-                        <p className="text-red-800">You are not enrolled in any courses. Please enroll to see grades.</p>
+                        <p className="text-red-800">
+                          You are not enrolled in any courses. Please enroll to see grades.
+                        </p>
                       )}
                     </div>
                   </div>
                   <div className="space-y-6">
-                    <div className="bg-white p-4 rounded-lg shadow-md">
+                    <div className="bg-white p-6 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Course Resources</h3>
                       {studentData.courses && studentData.courses.length > 0 ? (
                         studentData.courses.map((c: Course) => {
                           const enrolledCourse = allCourses.find((ac) => ac.name === c.name);
                           return (
-                            <div key={c.id || c.name} className="mb-4">
-                              <p className="text-red-800 font-medium">{c.name || "Unnamed Course"}</p>
-                              {enrolledCourse?.resources && Array.isArray(enrolledCourse.resources) && enrolledCourse.resources.length > 0 ? (
-                                <ul className="list-disc pl-5">
+                            <div key={c.id || c.name} className="mb-6">
+                              <p className="text-red-800 font-medium text-lg">
+                                {c.name || "Unnamed Course"}
+                              </p>
+                              {enrolledCourse?.resources &&
+                              Array.isArray(enrolledCourse.resources) &&
+                              enrolledCourse.resources.length > 0 ? (
+                                <ul className="mt-3 space-y-2">
                                   {enrolledCourse.resources.map((resource: Resource) => (
-                                    <li key={resource.id} className="text-red-800">
-                                      <a href={resource.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                    <li key={resource.id} className="text-red-800 bg-gray-50 p-3 rounded-md">
+                                      <a
+                                        href={resource.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="hover:underline font-medium"
+                                      >
                                         {resource.name || "Unnamed"} ({resource.type || "Unknown"})
-                                      </a>{" "}
-                                      - Uploaded: {resource.uploadDate ? new Date(resource.uploadDate).toLocaleString() : "N/A"}
+                                      </a>
+                                      <p className="text-sm">
+                                        Uploaded: {resource.uploadDate ? new Date(resource.uploadDate).toLocaleString() : "N/A"}
+                                      </p>
                                     </li>
                                   ))}
                                 </ul>
                               ) : (
-                                <p className="text-red-800">No resources available.</p>
+                                <p className="text-red-800 mt-2">No resources available.</p>
                               )}
                             </div>
                           );
                         })
                       ) : (
-                        <p className="text-red-800">You are not enrolled in any courses. Please enroll to see resources.</p>
+                        <p className="text-red-800">
+                          You are not enrolled in any courses. Please enroll to see resources.
+                        </p>
                       )}
                     </div>
-                    <div className="bg-white p-4 rounded-lg shadow-md">
+                    <div className="bg-white p-6 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Course Tests</h3>
                       {studentData.courses && studentData.courses.length > 0 ? (
                         studentData.courses.map((c: Course) => {
                           const enrolledCourse = allCourses.find((ac) => ac.name === c.name);
                           if (!enrolledCourse) return null;
                           return (
-                            <div key={c.id || c.name} className="mb-4">
-                              <p className="text-red-800 font-medium">{c.name || "Unnamed Course"}</p>
-                              {enrolledCourse.tests && Array.isArray(enrolledCourse.tests) && enrolledCourse.tests.length > 0 ? (
+                            <div key={c.id || c.name} className="mb-6">
+                              <p className="text-red-800 font-medium text-lg">
+                                {c.name || "Unnamed Course"}
+                              </p>
+                              {enrolledCourse.tests &&
+                              Array.isArray(enrolledCourse.tests) &&
+                              enrolledCourse.tests.length > 0 ? (
                                 enrolledCourse.tests.map((test: Test) => (
-                                  <div key={test.id} className="mt-2">
+                                  <div key={test.id} className="mt-4 bg-gray-50 p-4 rounded-md">
                                     <p className="text-red-800 font-medium">{test.title || "Untitled Test"}</p>
                                     {testResponses[test.id]?.submittedAt ? (
-                                      <p className="text-red-800">
-                                        Submitted on: {new Date(testResponses[test.id].submittedAt!).toLocaleString()}
-                                        <br />
-                                        Score: {testResponses[test.id].score?.toFixed(2)}%
-                                      </p>
+                                      <div className="text-red-800 mt-2">
+                                        <p>
+                                          Submitted on: {new Date(testResponses[test.id].submittedAt!).toLocaleString()}
+                                        </p>
+                                        <p>Score: {testResponses[test.id].score?.toFixed(2)}%</p>
+                                      </div>
                                     ) : (
                                       <>
                                         {test.questions && Array.isArray(test.questions) ? (
                                           test.questions.map((q, idx) => (
-                                            <div key={idx} className="mt-2">
-                                              <p className="text-red-800">{idx + 1}. {q.question || "No question"}</p>
+                                            <div key={idx} className="mt-3">
+                                              <p className="text-red-800 font-medium">
+                                                {idx + 1}. {q.question || "No question"}
+                                              </p>
                                               {q.options && Array.isArray(q.options) && q.options.length > 0 ? (
                                                 q.options.map((opt, optIdx) => (
-                                                  <label key={optIdx} className="block text-red-800">
+                                                  <label key={optIdx} className="block text-red-800 mt-1">
                                                     <input
                                                       type="radio"
                                                       name={`${test.id}-${idx}`}
@@ -770,18 +829,18 @@ export default function Dashboard() {
                                                   type="text"
                                                   value={testResponses[test.id]?.answers?.[idx] || ""}
                                                   onChange={(e) => handleTestAnswerChange(test.id, idx, e.target.value)}
-                                                  className="w-full p-2 border rounded text-red-800"
+                                                  className="w-full p-2 mt-2 border rounded text-red-800"
                                                   placeholder="Your answer"
                                                 />
                                               )}
                                             </div>
                                           ))
                                         ) : (
-                                          <p className="text-red-800">No questions available.</p>
+                                          <p className="text-red-800 mt-2">No questions available.</p>
                                         )}
                                         <button
                                           onClick={() => handleSubmitTest(enrolledCourse.id, test.id)}
-                                          className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                          className="mt-4 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
                                         >
                                           Submit Test
                                         </button>
@@ -790,51 +849,67 @@ export default function Dashboard() {
                                   </div>
                                 ))
                               ) : (
-                                <p className="text-red-800">No tests available.</p>
+                                <p className="text-red-800 mt-2">No tests available.</p>
                               )}
                             </div>
                           );
                         })
                       ) : (
-                        <p className="text-red-800">You are not enrolled in any courses. Please enroll to see tests.</p>
+                        <p className="text-red-800">
+                          You are not enrolled in any courses. Please enroll to see tests.
+                        </p>
                       )}
                     </div>
-                    <div className="bg-white p-4 rounded-lg shadow-md">
+                    <div className="bg-white p-6 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Payments</h3>
-                      <p className="text-red-800">Balance: {(studentData.balance || 0).toLocaleString()} JMD</p>
-                      <p className="text-red-800">Status: {studentData.paymentStatus || "Unpaid"}</p>
-                      <p className="text-red-800">Clearance: {studentData.clearance ? "Yes" : "No"}</p>
-                      <div className="mt-2">
-                        <h4 className="text-red-800 font-medium">Transaction History</h4>
-                        {studentData.transactions.length ? (
-                          studentData.transactions.map((txn: Transaction) => (
-                            <p key={txn.id || txn.date} className="text-red-800">
-                              {new Date(txn.date).toLocaleString()}: {(txn.amount || 0).toLocaleString()} JMD - {txn.status || "Unknown"}
-                            </p>
-                          ))
-                        ) : (
-                          <p className="text-red-800">No transactions.</p>
-                        )}
+                      <div className="bg-gray-50 p-4 rounded-md mb-4">
+                        <p className="text-red-800 font-medium">
+                          Balance: {(studentData.balance || 0).toLocaleString()} JMD
+                        </p>
+                        <p className="text-red-800">Status: {studentData.paymentStatus || "Unpaid"}</p>
+                        <p className="text-red-800">Clearance: {studentData.clearance ? "Yes" : "No"}</p>
                       </div>
+                      <h4 className="text-red-800 font-medium mb-2">Transaction History</h4>
+                      {studentData.transactions.length ? (
+                        <div className="space-y-2">
+                          {studentData.transactions.map((txn: Transaction) => (
+                            <p key={txn.id || txn.date} className="text-red-800 bg-gray-50 p-3 rounded-md">
+                              {new Date(txn.date).toLocaleString()}: {(txn.amount || 0).toLocaleString()} JMD -{" "}
+                              {txn.status || "Unknown"}
+                            </p>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-red-800">No transactions.</p>
+                      )}
                       {studentData.balance > 0 && (
-                        <CheckoutPage balance={studentData.balance} onPaymentSuccess={handlePaymentSuccess} />
+                        <div className="mt-4">
+                          <CheckoutPage balance={studentData.balance} onPaymentSuccess={handlePaymentSuccess} />
+                        </div>
                       )}
                     </div>
-                    <div className="bg-white p-4 rounded-lg shadow-md">
+                    <div className="bg-white p-6 rounded-lg shadow-md">
                       <h3 className="text-lg font-semibold text-red-800 mb-4">Enroll in Courses</h3>
                       {allCourses.length ? (
-                        allCourses.map((course: Course) => (
-                          <div key={course.id} className="mb-2 flex justify-between items-center">
-                            <p className="text-red-800">{course.name || "Unnamed Course"} (Fee: {(course.fee || 0).toLocaleString()} JMD)</p>
-                            <button
-                              onClick={() => handleEnrollCourse(course)}
-                              className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400"
-                              disabled={studentData.courses?.some((c) => c.name === course.name)}
+                        <div className="space-y-4">
+                          {allCourses.map((course: Course) => (
+                            <div
+                              key={course.id}
+                              className="flex justify-between items-center p-4 bg-gray-50 rounded-md"
                             >
-                              {studentData.courses?.some((c) => c.name === course.name) ? "Already Enrolled" : "Enroll"}
-                            </button>
-                          </div>
-                        ))
+                              <p className="text-red-800">
+                                {course.name || "Unnamed Course"} (Fee: {(course.fee || 0).toLocaleString()} JMD)
+                              </p>
+                              <button
+                                onClick={() => handleEnrollCourse(course)}
+                                className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 disabled:bg-gray-400"
+                                disabled={studentData.courses?.some((c) => c.name === course.name)}
+                              >
+                                {studentData.courses?.some((c) => c.name === course.name) ? "Already Enrolled" : "Enroll"}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
                       ) : (
                         <p className="text-red-800">No courses available.</p>
                       )}
@@ -848,79 +923,79 @@ export default function Dashboard() {
           {/* Teacher Dashboard */}
           {role === "teacher" && (
             <div className="space-y-6">
-              <h3 className="text-xl font-semibold text-red-800 mb-4">Manage Student Grades and Resources</h3>
+              <h3 className="text-xl font-semibold text-red-800 mb-4">Teacher Dashboard</h3>
               {allStudents.length ? (
                 allStudents.map((s: StudentData) => (
-                  <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
-                    <p className="text-lg font-medium text-red-800 mb-2">{s.name || "Unnamed"}</p>
+                  <div key={s.id} className="bg-white p-6 rounded-lg shadow-md">
+                    <p className="text-lg font-medium text-red-800 mb-4">{s.name || "Unnamed"}</p>
                     {s.courses && Array.isArray(s.courses) && s.courses.length ? (
                       s.courses.map((c: Course) => {
                         const fullCourse = allCourses.find((ac) => ac.name === c.name);
                         return (
-                          <div key={c.id || c.name} className="mb-4">
-                            <p className="text-red-800 font-medium">{c.name || "Unnamed Course"}</p>
+                          <div key={c.id || c.name} className="mb-6">
+                            <p className="text-red-800 font-medium text-lg">{c.name || "Unnamed Course"}</p>
                             {c.subjects && Array.isArray(c.subjects) && c.subjects.length ? (
-                              <table className="w-full mt-2 border-collapse">
+                              <table className="w-full mt-4 border-collapse bg-gray-50 rounded-md">
                                 <thead>
                                   <tr className="bg-red-800 text-white">
-                                    <th className="p-2 border">Subject</th>
-                                    <th className="p-2 border">C1</th>
-                                    <th className="p-2 border">C2</th>
-                                    <th className="p-2 border">Exam</th>
-                                    <th className="p-2 border">Final</th>
-                                    <th className="p-2 border">Comments</th>
+                                    <th className="p-3 border">Subject</th>
+                                    <th className="p-3 border">C1</th>
+                                    <th className="p-3 border">C2</th>
+                                    <th className="p-3 border">Exam</th>
+                                    <th className="p-3 border">Final</th>
+                                    <th className="p-3 border">Comments</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   {c.subjects.map((sub: Subject) => (
                                     <tr key={sub.name || Math.random()}>
-                                      <td className="p-2 border text-red-800">{sub.name || "N/A"}</td>
-                                      <td className="p-2 border">
+                                      <td className="p-3 border text-red-800">{sub.name || "N/A"}</td>
+                                      <td className="p-3 border">
                                         <input
                                           type="number"
                                           value={sub.grades?.C1 || ""}
                                           onChange={(e) =>
                                             handleGradeUpdate(s.id, c.name, sub.name, "C1", e.target.value)
                                           }
-                                          className="w-full p-1 border rounded text-red-800"
+                                          className="w-full p-2 border rounded text-red-800"
                                           min="0"
                                           max="100"
                                         />
                                       </td>
-                                      <td className="p-2 border">
+                                      <td className="p-3 border">
                                         <input
                                           type="number"
                                           value={sub.grades?.C2 || ""}
                                           onChange={(e) =>
                                             handleGradeUpdate(s.id, c.name, sub.name, "C2", e.target.value)
                                           }
-                                          className="w-full p-1 border rounded text-red-800"
+                                          className="w-full p-2 border rounded text-red-800"
                                           min="0"
                                           max="100"
                                         />
                                       </td>
-                                      <td className="p-2 border">
+                                      <td className="p-3 border">
                                         <input
                                           type="number"
                                           value={sub.grades?.exam || ""}
                                           onChange={(e) =>
                                             handleGradeUpdate(s.id, c.name, sub.name, "exam", e.target.value)
                                           }
-                                          className="w-full p-1 border rounded text-red-800"
+                                          className="w-full p-2 border rounded text-red-800"
                                           min="0"
                                           max="100"
                                         />
                                       </td>
-                                      <td className="p-2 border text-red-800">{sub.grades?.final || "N/A"}</td>
-                                      <td className="p-2 border text-red-800">{sub.comments || "N/A"}</td>
+                                      <td className="p-3 border text-red-800">{sub.grades?.final || "N/A"}</td>
+                                      <td className="p-3 border text-red-800">{sub.comments || "N/A"}</td>
                                     </tr>
                                   ))}
                                 </tbody>
                               </table>
                             ) : (
-                              <p className="text-red-800">No subjects assigned.</p>
+                              <p className="text-red-800 mt-2">No subjects assigned.</p>
                             )}
-                            <div className="mt-2">
+                            <div className="mt-4 flex items-center space-x-4">
                               <input
                                 type="text"
                                 placeholder="Add new subject"
@@ -930,76 +1005,93 @@ export default function Dashboard() {
                                     e.currentTarget.value = "";
                                   }
                                 }}
-                                className="p-2 border rounded text-red-800"
+                                className="p-2 border rounded text-red-800 flex-1"
                               />
+                              <button
+                                onClick={() => handleUpdateStudent(s.id)}
+                                className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                              >
+                                Save Grades
+                              </button>
                             </div>
-                            <button
-                              onClick={() => handleUpdateStudent(s.id)}
-                              className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                            >
-                              Save Grades
-                            </button>
                             {fullCourse && (
-                              <div className="mt-4">
-                                <h4 className="text-red-800 font-medium">Resources for {c.name}</h4>
-                                {fullCourse.resources && Array.isArray(fullCourse.resources) && fullCourse.resources.length ? (
-                                  <ul className="list-disc pl-5">
+                              <div className="mt-6">
+                                <h4 className="text-red-800 font-medium text-lg mb-3">
+                                  Resources for {c.name}
+                                </h4>
+                                {fullCourse.resources &&
+                                Array.isArray(fullCourse.resources) &&
+                                fullCourse.resources.length ? (
+                                  <ul className="space-y-2">
                                     {fullCourse.resources.map((resource: Resource) => (
-                                      <li key={resource.id} className="text-red-800">
-                                        <a href={resource.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                                      <li key={resource.id} className="text-red-800 bg-gray-50 p-3 rounded-md">
+                                        <a
+                                          href={resource.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="hover:underline font-medium"
+                                        >
                                           {resource.name || "Unnamed"} ({resource.type || "Unknown"})
-                                        </a>{" "}
-                                        - Uploaded: {resource.uploadDate ? new Date(resource.uploadDate).toLocaleString() : "N/A"}
+                                        </a>
+                                        <p className="text-sm">
+                                          Uploaded: {resource.uploadDate ? new Date(resource.uploadDate).toLocaleString() : "N/A"}
+                                        </p>
                                       </li>
                                     ))}
                                   </ul>
                                 ) : (
                                   <p className="text-red-800">No resources available.</p>
                                 )}
-                                <div className="mt-2">
+                                <div className="mt-4 space-y-3">
                                   <input
                                     type="text"
                                     placeholder="Resource Name"
                                     id={`resource-name-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                    className="p-2 border rounded text-red-800 w-full"
                                   />
                                   <input
                                     type="text"
                                     placeholder="Resource URL"
                                     id={`resource-url-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                    className="p-2 border rounded text-red-800 w-full"
                                   />
                                   <input
                                     type="text"
                                     placeholder="Resource Type"
                                     id={`resource-type-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                    className="p-2 border rounded text-red-800 w-full"
                                   />
                                   <button
                                     onClick={() => {
-                                      const name = (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value;
-                                      const url = (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value;
-                                      const type = (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value;
+                                      const name = (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement)
+                                        .value;
+                                      const url = (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement)
+                                        .value;
+                                      const type = (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement)
+                                        .value;
                                       if (name && url && type) {
                                         handleAddResource(fullCourse.id, name, url, type);
                                         (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value = "";
                                         (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value = "";
-                                        (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                        (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value =
+                                          "";
                                       } else {
                                         alert("Please fill in all resource fields.");
                                       }
                                     }}
-                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full"
                                   >
                                     Add Resource
                                   </button>
                                 </div>
-                                <h4 className="text-red-800 font-medium mt-4">Tests for {c.name}</h4>
+                                <h4 className="text-red-800 font-medium text-lg mt-6 mb-3">
+                                  Tests for {c.name}
+                                </h4>
                                 {fullCourse.tests && Array.isArray(fullCourse.tests) && fullCourse.tests.length ? (
                                   fullCourse.tests.map((test: Test) => (
-                                    <div key={test.id} className="mt-2">
-                                      <p className="text-red-800">{test.title || "Untitled Test"}</p>
-                                      <ul className="list-disc pl-5">
+                                    <div key={test.id} className="mt-4 bg-gray-50 p-4 rounded-md">
+                                      <p className="text-red-800 font-medium">{test.title || "Untitled Test"}</p>
+                                      <ul className="list-disc pl-5 mt-2">
                                         {test.questions && Array.isArray(test.questions) && test.questions.length ? (
                                           test.questions.map((q, idx) => (
                                             <li key={idx} className="text-red-800">
@@ -1015,16 +1107,17 @@ export default function Dashboard() {
                                 ) : (
                                   <p className="text-red-800">No tests available.</p>
                                 )}
-                                <div className="mt-2">
+                                <div className="mt-4 space-y-3">
                                   <input
                                     type="text"
                                     placeholder="Test Title"
                                     id={`test-title-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
+                                    className="p-2 border rounded text-red-800 w-full"
                                   />
                                   <button
                                     onClick={() => {
-                                      const title = (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value;
+                                      const title = (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement)
+                                        .value;
                                       if (title) {
                                         const questions = [
                                           { question: "Sample Question 1", options: ["A", "B", "C"], correctAnswer: "A" },
@@ -1036,7 +1129,7 @@ export default function Dashboard() {
                                         alert("Please enter a test title.");
                                       }
                                     }}
-                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full"
                                   >
                                     Add Test
                                   </button>
@@ -1061,318 +1154,411 @@ export default function Dashboard() {
           {role === "admin" && (
             <div className="space-y-6">
               <h3 className="text-xl font-semibold text-red-800 mb-4">Admin Dashboard</h3>
-              <div className="bg-white p-4 rounded-lg shadow-md">
-                <h4 className="text-lg font-semibold text-red-800 mb-4">Analytics</h4>
-                <p className="text-red-800">Total Students: {allStudents.length}</p>
-                <p className="text-red-800">Total Courses: {allCourses.length}</p>
-                <p className="text-red-800">
-                  Total Revenue: {allStudents.reduce((sum, s) => sum + (s.totalPaid || 0), 0).toLocaleString()} JMD
-                </p>
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h4 className="text-lg font-semibold text-red-800 mb-4">System Overview</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <p className="text-red-800 font-medium">Total Students</p>
+                    <p className="text-2xl text-red-800">{allStudents.length}</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <p className="text-red-800 font-medium">Total Courses</p>
+                    <p className="text-2xl text-red-800">{allCourses.length}</p>
+                  </div>
+                  <div className="bg-gray-50 p-4 rounded-md">
+                    <p className="text-red-800 font-medium">Total Revenue</p>
+                    <p className="text-2xl text-red-800">
+                      {allStudents.reduce((sum, s) => sum + (s.totalPaid || 0), 0).toLocaleString()} JMD
+                    </p>
+                  </div>
+                </div>
               </div>
-              <div className="bg-white p-4 rounded-lg shadow-md">
-                <h4 className="text-lg font-semibold text-red-800 mb-4">Add New Student</h4>
-                <input
-                  type="text"
-                  placeholder="Student Name"
-                  id="new-student-name"
-                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                />
-                <input
-                  type="email"
-                  placeholder="Student Email"
-                  id="new-student-email"
-                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                />
-                <button
-                  onClick={() => {
-                    const name = (document.getElementById("new-student-name") as HTMLInputElement).value;
-                    const email = (document.getElementById("new-student-email") as HTMLInputElement).value;
-                    if (name && email) {
-                      handleAddStudent(name, email);
-                      (document.getElementById("new-student-name") as HTMLInputElement).value = "";
-                      (document.getElementById("new-student-email") as HTMLInputElement).value = "";
-                    } else {
-                      alert("Please enter both name and email.");
-                    }
-                  }}
-                  className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                >
-                  Add Student
-                </button>
-              </div>
-              <div className="bg-white p-4 rounded-lg shadow-md">
-                <h4 className="text-lg font-semibold text-red-800 mb-4">Add New Course</h4>
-                <input
-                  type="text"
-                  placeholder="Course Name"
-                  id="new-course-name"
-                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                />
-                <input
-                  type="number"
-                  placeholder="Fee (JMD)"
-                  id="new-course-fee"
-                  className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                  min="0"
-                />
-                <button
-                  onClick={() => {
-                    const name = (document.getElementById("new-course-name") as HTMLInputElement).value;
-                    const feeStr = (document.getElementById("new-course-fee") as HTMLInputElement).value;
-                    const fee = parseFloat(feeStr);
-                    if (name && !isNaN(fee) && fee >= 0) {
-                      handleAddCourse(name, fee);
-                      (document.getElementById("new-course-name") as HTMLInputElement).value = "";
-                      (document.getElementById("new-course-fee") as HTMLInputElement).value = "";
-                    } else {
-                      alert("Please enter a valid course name and fee.");
-                    }
-                  }}
-                  className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                >
-                  Add Course
-                </button>
-              </div>
-              {allStudents.length ? (
-                allStudents.map((s: StudentData) => (
-                  <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
-                    <p className="text-lg font-medium text-red-800 mb-2">{s.name || "Unnamed"}</p>
-                    <p className="text-red-800">Balance: {(s.balance || 0).toLocaleString()} JMD</p>
-                    <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
-                    {s.courses && Array.isArray(s.courses) && s.courses.length ? (
-                      s.courses.map((c: Course) => {
-                        const fullCourse = allCourses.find((ac) => ac.name === c.name);
-                        return (
-                          <div key={c.id || c.name} className="mb-4">
-                            <p className="text-red-800 font-medium">{c.name || "Unnamed Course"}</p>
-                            {c.subjects && Array.isArray(c.subjects) && c.subjects.length ? (
-                              <table className="w-full mt-2 border-collapse">
-                                <thead>
-                                  <tr className="bg-red-800 text-white">
-                                    <th className="p-2 border">Subject</th>
-                                    <th className="p-2 border">C1</th>
-                                    <th className="p-2 border">C2</th>
-                                    <th className="p-2 border">Exam</th>
-                                    <th className="p-2 border">Final</th>
-                                    <th className="p-2 border">Comments</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {c.subjects.map((sub: Subject) => (
-                                    <tr key={sub.name || Math.random()}>
-                                      <td className="p-2 border text-red-800">{sub.name || "N/A"}</td>
-                                      <td className="p-2 border">
-                                        <input
-                                          type="number"
-                                          value={sub.grades?.C1 || ""}
-                                          onChange={(e) =>
-                                            handleGradeUpdate(s.id, c.name, sub.name, "C1", e.target.value)
-                                          }
-                                          className="w-full p-1 border rounded text-red-800"
-                                          min="0"
-                                          max="100"
-                                        />
-                                      </td>
-                                      <td className="p-2 border">
-                                        <input
-                                          type="number"
-                                          value={sub.grades?.C2 || ""}
-                                          onChange={(e) =>
-                                            handleGradeUpdate(s.id, c.name, sub.name, "C2", e.target.value)
-                                          }
-                                          className="w-full p-1 border rounded text-red-800"
-                                          min="0"
-                                          max="100"
-                                        />
-                                      </td>
-                                      <td className="p-2 border">
-                                        <input
-                                          type="number"
-                                          value={sub.grades?.exam || ""}
-                                          onChange={(e) =>
-                                            handleGradeUpdate(s.id, c.name, sub.name, "exam", e.target.value)
-                                          }
-                                          className="w-full p-1 border rounded text-red-800"
-                                          min="0"
-                                          max="100"
-                                        />
-                                      </td>
-                                      <td className="p-2 border text-red-800">{sub.grades?.final || "N/A"}</td>
-                                      <td className="p-2 border text-red-800">{sub.comments || "N/A"}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            ) : (
-                              <p className="text-red-800">No subjects assigned.</p>
-                            )}
-                            <div className="mt-2">
-                              <input
-                                type="text"
-                                placeholder="Add new subject"
-                                onKeyDown={(e) => {
-                                  if (e.key === "Enter" && e.currentTarget.value) {
-                                    handleAddSubject(s.id, c.name, e.currentTarget.value);
-                                    e.currentTarget.value = "";
-                                  }
-                                }}
-                                className="p-2 border rounded text-red-800"
-                              />
-                            </div>
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h4 className="text-lg font-semibold text-red-800 mb-4">Manage Students</h4>
+                <div className="space-y-4 mb-6">
+                  <input
+                    type="text"
+                    placeholder="Student Name"
+                    id="new-student-name"
+                    className="p-2 border rounded text-red-800 w-full"
+                  />
+                  <input
+                    type="email"
+                    placeholder="Student Email"
+                    id="new-student-email"
+                    className="p-2 border rounded text-red-800 w-full"
+                  />
+                  <button
+                    onClick={() => {
+                      const name = (document.getElementById("new-student-name") as HTMLInputElement).value;
+                      const email = (document.getElementById("new-student-email") as HTMLInputElement).value;
+                      if (name && email) {
+                        handleAddStudent(name, email);
+                        (document.getElementById("new-student-name") as HTMLInputElement).value = "";
+                        (document.getElementById("new-student-email") as HTMLInputElement).value = "";
+                      } else {
+                        alert("Please enter both name and email.");
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full"
+                  >
+                    Add Student
+                  </button>
+                </div>
+                {allStudents.length ? (
+                  <div className="space-y-6">
+                    {allStudents.map((s: StudentData) => (
+                      <div key={s.id} className="bg-gray-50 p-6 rounded-md">
+                        <p className="text-lg font-medium text-red-800">{s.name || "Unnamed"}</p>
+                        <p className="text-red-800">Email: {s.email}</p>
+                        <p className="text-red-800">Balance: {(s.balance || 0).toLocaleString()} JMD</p>
+                        <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
+                        <div className="mt-4 space-y-4">
+                          <div className="flex flex-wrap gap-3">
                             <button
-                              onClick={() => handleUpdateStudent(s.id)}
-                              className="mt-2 px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                              onClick={() => handleResetPassword(s.email)}
+                              className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
                             >
-                              Save Grades
+                              Reset Password
                             </button>
-                            {fullCourse && (
-                              <div className="mt-4">
-                                <h4 className="text-red-800 font-medium">Resources for {c.name}</h4>
-                                {fullCourse.resources && Array.isArray(fullCourse.resources) && fullCourse.resources.length ? (
-                                  <ul className="list-disc pl-5">
-                                    {fullCourse.resources.map((resource: Resource) => (
-                                      <li key={resource.id} className="text-red-800">
-                                        <a href={resource.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                                          {resource.name || "Unnamed"} ({resource.type || "Unknown"})
-                                        </a>{" "}
-                                        - Uploaded: {resource.uploadDate ? new Date(resource.uploadDate).toLocaleString() : "N/A"}
-                                      </li>
-                                    ))}
-                                  </ul>
-                                ) : (
-                                  <p className="text-red-800">No resources available.</p>
-                                )}
-                                <div className="mt-2">
-                                  <input
-                                    type="text"
-                                    placeholder="Resource Name"
-                                    id={`resource-name-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                                  />
-                                  <input
-                                    type="text"
-                                    placeholder="Resource URL"
-                                    id={`resource-url-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                                  />
-                                  <input
-                                    type="text"
-                                    placeholder="Resource Type"
-                                    id={`resource-type-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      const name = (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value;
-                                      const url = (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value;
-                                      const type = (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value;
-                                      if (name && url && type) {
-                                        handleAddResource(fullCourse.id, name, url, type);
-                                        (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value = "";
-                                        (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value = "";
-                                        (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value = "";
-                                      } else {
-                                        alert("Please fill in all resource fields.");
-                                      }
-                                    }}
-                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                                  >
-                                    Add Resource
-                                  </button>
-                                </div>
-                                <h4 className="text-red-800 font-medium mt-4">Tests for {c.name}</h4>
-                                {fullCourse.tests && Array.isArray(fullCourse.tests) && fullCourse.tests.length ? (
-                                  fullCourse.tests.map((test: Test) => (
-                                    <div key={test.id} className="mt-2">
-                                      <p className="text-red-800">{test.title || "Untitled Test"}</p>
-                                      <ul className="list-disc pl-5">
-                                        {test.questions && Array.isArray(test.questions) && test.questions.length ? (
-                                          test.questions.map((q, idx) => (
-                                            <li key={idx} className="text-red-800">
-                                              {q.question || "No question"} (Correct: {q.correctAnswer || "N/A"})
-                                            </li>
+                            <button
+                              onClick={() => handleGrantClearance(s.id)}
+                              disabled={s.clearance}
+                              className={`px-4 py-2 rounded-md text-white ${
+                                s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                              }`}
+                            >
+                              Grant Clearance
+                            </button>
+                            <button
+                              onClick={() => handleRemoveClearance(s.id)}
+                              disabled={!s.clearance}
+                              className={`px-4 py-2 rounded-md text-white ${
+                                !s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                              }`}
+                            >
+                              Remove Clearance
+                            </button>
+                            <button
+                              onClick={() => handleDeleteStudent(s.id)}
+                              className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-500"
+                            >
+                              Delete Student
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <input
+                              type="text"
+                              id={`notification-${s.id}`}
+                              placeholder="Send notification"
+                              className="p-2 border rounded text-red-800 flex-1"
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && e.currentTarget.value) {
+                                  handleSendNotification(s.id, e.currentTarget.value);
+                                  e.currentTarget.value = "";
+                                }
+                              }}
+                            />
+                            <button
+                              onClick={() => {
+                                const message = (document.getElementById(`notification-${s.id}`) as HTMLInputElement)?.value;
+                                if (message) {
+                                  handleSendNotification(s.id, message);
+                                  (document.getElementById(`notification-${s.id}`) as HTMLInputElement).value = "";
+                                }
+                              }}
+                              className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                            >
+                              Send
+                            </button>
+                          </div>
+                        </div>
+                        {/* Courses Section */}
+                        <div className="mt-6">
+                          <h5 className="text-red-800 font-medium mb-3">Courses</h5>
+                          {s.courses && Array.isArray(s.courses) && s.courses.length ? (
+                            s.courses.map((c: Course) => {
+                              const fullCourse = allCourses.find((ac) => ac.name === c.name);
+                              return (
+                                <div key={c.id || c.name} className="mb-6 bg-white p-4 rounded-md">
+                                  <p className="text-red-800 font-medium">
+                                    {c.name || "Unnamed Course"} (Fee: {(c.fee || 0).toLocaleString()} JMD)
+                                  </p>
+                                  {/* Subjects */}
+                                  {c.subjects && Array.isArray(c.subjects) && c.subjects.length ? (
+                                    <div className="mt-4">
+                                      <h6 className="text-red-800 font-medium">Subjects</h6>
+                                      <table className="w-full mt-2 border-collapse bg-gray-50 rounded-md">
+                                        <thead>
+                                          <tr className="bg-red-800 text-white">
+                                            <th className="p-2 border">Subject</th>
+                                            <th className="p-2 border">C1</th>
+                                            <th className="p-2 border">C2</th>
+                                            <th className="p-2 border">Exam</th>
+                                            <th className="p-2 border">Final</th>
+                                            <th className="p-2 border">Comments</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {c.subjects.map((sub: Subject) => (
+                                            <tr key={sub.name || Math.random()}>
+                                              <td className="p-2 border text-red-800">{sub.name || "N/A"}</td>
+                                              <td className="p-2 border">
+                                                <input
+                                                  type="number"
+                                                  value={sub.grades?.C1 || ""}
+                                                  onChange={(e) =>
+                                                    handleGradeUpdate(s.id, c.name, sub.name, "C1", e.target.value)
+                                                  }
+                                                  className="w-full p-1 border rounded text-red-800"
+                                                  min="0"
+                                                  max="100"
+                                                />
+                                              </td>
+                                              <td className="p-2 border">
+                                                <input
+                                                  type="number"
+                                                  value={sub.grades?.C2 || ""}
+                                                  onChange={(e) =>
+                                                    handleGradeUpdate(s.id, c.name, sub.name, "C2", e.target.value)
+                                                  }
+                                                  className="w-full p-1 border rounded text-red-800"
+                                                  min="0"
+                                                  max="100"
+                                                />
+                                              </td>
+                                              <td className="p-2 border">
+                                                <input
+                                                  type="number"
+                                                  value={sub.grades?.exam || ""}
+                                                  onChange={(e) =>
+                                                    handleGradeUpdate(s.id, c.name, sub.name, "exam", e.target.value)
+                                                  }
+                                                  className="w-full p-1 border rounded text-red-800"
+                                                  min="0"
+                                                  max="100"
+                                                />
+                                              </td>
+                                              <td className="p-2 border text-red-800">{sub.grades?.final || "N/A"}</td>
+                                              <td className="p-2 border text-red-800">{sub.comments || "N/A"}</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  ) : (
+                                    <p className="text-red-800 mt-2">No subjects assigned.</p>
+                                  )}
+                                  {/* Add Subject */}
+                                  <div className="mt-3 flex items-center gap-3">
+                                    <input
+                                      type="text"
+                                      placeholder="Add new subject"
+                                      className="p-2 border rounded text-red-800 flex-1"
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Enter" && e.currentTarget.value) {
+                                          handleAddSubject(s.id, c.name, e.currentTarget.value);
+                                          e.currentTarget.value = "";
+                                        }
+                                      }}
+                                    />
+                                    <button
+                                      onClick={() => handleUpdateStudent(s.id)}
+                                      className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
+                                    >
+                                      Save Grades
+                                    </button>
+                                  </div>
+                                  {/* Resources and Tests */}
+                                  {fullCourse && (
+                                    <div className="mt-6 space-y-6">
+                                      <div>
+                                        <h6 className="text-red-800 font-medium mb-2">Resources for {c.name}</h6>
+                                        {fullCourse.resources && Array.isArray(fullCourse.resources) && fullCourse.resources.length ? (
+                                          <ul className="space-y-2">
+                                            {fullCourse.resources.map((resource: Resource) => (
+                                              <li key={resource.id} className="text-red-800 bg-gray-50 p-2 rounded-md">
+                                                <a
+                                                  href={resource.url}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="hover:underline"
+                                                >
+                                                  {resource.name || "Unnamed"} ({resource.type || "Unknown"})
+                                                </a>{" "}
+                                                - Uploaded: {resource.uploadDate ? new Date(resource.uploadDate).toLocaleString() : "N/A"}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        ) : (
+                                          <p className="text-red-800">No resources available.</p>
+                                        )}
+                                        <div className="mt-3 space-y-2">
+                                          <input
+                                            type="text"
+                                            placeholder="Resource Name"
+                                            id={`resource-name-${fullCourse.id}`}
+                                            className="p-2 border rounded text-red-800 w-full"
+                                          />
+                                          <input
+                                            type="text"
+                                            placeholder="Resource URL"
+                                            id={`resource-url-${fullCourse.id}`}
+                                            className="p-2 border rounded text-red-800 w-full"
+                                          />
+                                          <input
+                                            type="text"
+                                            placeholder="Resource Type"
+                                            id={`resource-type-${fullCourse.id}`}
+                                            className="p-2 border rounded text-red-800 w-full"
+                                          />
+                                          <button
+                                            onClick={() => {
+                                              const name = (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value;
+                                              const url = (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value;
+                                              const type = (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value;
+                                              if (name && url && type) {
+                                                handleAddResource(fullCourse.id, name, url, type);
+                                                (document.getElementById(`resource-name-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                                (document.getElementById(`resource-url-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                                (document.getElementById(`resource-type-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                              } else {
+                                                alert("Please fill in all resource fields.");
+                                              }
+                                            }}
+                                            className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full"
+                                          >
+                                            Add Resource
+                                          </button>
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <h6 className="text-red-800 font-medium mb-2">Tests for {c.name}</h6>
+                                        {fullCourse.tests && Array.isArray(fullCourse.tests) && fullCourse.tests.length ? (
+                                          fullCourse.tests.map((test: Test) => (
+                                            <div key={test.id} className="mt-2 bg-gray-50 p-3 rounded-md">
+                                              <p className="text-red-800 font-medium">{test.title || "Untitled Test"}</p>
+                                              <ul className="list-disc pl-5 mt-1 text-red-800">
+                                                {test.questions && Array.isArray(test.questions) && test.questions.length ? (
+                                                  test.questions.map((q, idx) => (
+                                                    <li key={idx}>
+                                                      {q.question || "No question"} (Correct: {q.correctAnswer || "N/A"})
+                                                    </li>
+                                                  ))
+                                                ) : (
+                                                  <li>No questions available</li>
+                                                )}
+                                              </ul>
+                                            </div>
                                           ))
                                         ) : (
-                                          <li className="text-red-800">No questions available</li>
+                                          <p className="text-red-800">No tests available.</p>
                                         )}
-                                      </ul>
+                                        <div className="mt-3 space-y-2">
+                                          <input
+                                            type="text"
+                                            placeholder="Test Title"
+                                            id={`test-title-${fullCourse.id}`}
+                                            className="p-2 border rounded text-red-800 w-full"
+                                          />
+                                          <button
+                                            onClick={() => {
+                                              const title = (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value;
+                                              if (title) {
+                                                const questions = [
+                                                  {
+                                                    question: "Sample Question 1",
+                                                    options: ["A", "B", "C"],
+                                                    correctAnswer: "A",
+                                                  },
+                                                  {
+                                                    question: "Sample Question 2",
+                                                    options: ["X", "Y", "Z"],
+                                                    correctAnswer: "Y",
+                                                  },
+                                                ];
+                                                handleAddTest(fullCourse.id, title, questions);
+                                                (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value = "";
+                                              } else {
+                                                alert("Please enter a test title.");
+                                              }
+                                            }}
+                                            className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full"
+                                          >
+                                            Add Test
+                                          </button>
+                                        </div>
+                                      </div>
                                     </div>
-                                  ))
-                                ) : (
-                                  <p className="text-red-800">No tests available.</p>
-                                )}
-                                <div className="mt-2">
-                                  <input
-                                    type="text"
-                                    placeholder="Test Title"
-                                    id={`test-title-${fullCourse.id}`}
-                                    className="p-2 border rounded text-red-800 mr-2 mb-2 w-full"
-                                  />
-                                  <button
-                                    onClick={() => {
-                                      const title = (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value;
-                                      if (title) {
-                                        const questions = [
-                                          { question: "Sample Question 1", options: ["A", "B", "C"], correctAnswer: "A" },
-                                          { question: "Sample Question 2", options: ["X", "Y", "Z"], correctAnswer: "Y" },
-                                        ];
-                                        handleAddTest(fullCourse.id, title, questions);
-                                        (document.getElementById(`test-title-${fullCourse.id}`) as HTMLInputElement).value = "";
-                                      } else {
-                                        alert("Please enter a test title.");
-                                      }
-                                    }}
-                                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
-                                  >
-                                    Add Test
-                                  </button>
+                                  )}
                                 </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      <p className="text-red-800">No courses enrolled.</p>
-                    )}
-                    <div className="mt-2">
-                      <input
-                        type="text"
-                        placeholder="Send notification"
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && e.currentTarget.value) {
-                            handleSendNotification(s.id, e.currentTarget.value);
-                            e.currentTarget.value = "";
-                          }
-                        }}
-                        className="p-2 border rounded text-red-800 mr-2 w-full"
-                      />
-                    </div>
-                    <div className="flex gap-4 mt-2">
-                      <button
-                        onClick={() => handleGrantClearance(s.id)}
-                        disabled={s.clearance}
-                        className={`px-4 py-2 rounded-md text-white ${
-                          s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
-                        }`}
-                      >
-                        Grant Clearance
-                      </button>
-                      <button
-                        onClick={() => handleRemoveClearance(s.id)}
-                        disabled={!s.clearance}
-                        className={`px-4 py-2 rounded-md text-white ${
-                          !s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
-                        }`}
-                      >
-                        Remove Clearance
-                      </button>
-                    </div>
+                              );
+                            })
+                          ) : (
+                            <p className="text-red-800 mt-2">No courses enrolled.</p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))
-              ) : (
-                <p className="text-red-800">No students found.</p>
-              )}
+                ) : (
+                  <p className="text-red-800">No students found.</p>
+                )}
+              </div>
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h4 className="text-lg font-semibold text-red-800 mb-4">Manage Courses</h4>
+                <div className="space-y-4 mb-6">
+                  <input
+                    type="text"
+                    placeholder="Course Name"
+                    id="new-course-name"
+                    className="p-2 border rounded text-red-800 w-full"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Fee (JMD)"
+                    id="new-course-fee"
+                    className="p-2 border rounded text-red-800 w-full"
+                    min="0"
+                  />
+                  <button
+                    onClick={() => {
+                      const name = (document.getElementById("new-course-name") as HTMLInputElement).value;
+                      const feeStr = (document.getElementById("new-course-fee") as HTMLInputElement).value;
+                      const fee = parseFloat(feeStr);
+                      if (name && !isNaN(fee) && fee >= 0) {
+                        handleAddCourse(name, fee);
+                        (document.getElementById("new-course-name") as HTMLInputElement).value = "";
+                        (document.getElementById("new-course-fee") as HTMLInputElement).value = "";
+                      } else {
+                        alert("Please enter a valid course name and fee.");
+                      }
+                    }}
+                    className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full"
+                  >
+                    Add Course
+                  </button>
+                </div>
+                {allCourses.length ? (
+                  <div className="space-y-4">
+                    {allCourses.map((course: Course) => (
+                      <div key={course.id} className="bg-gray-50 p-4 rounded-md">
+                        <p className="text-red-800 font-medium">
+                          {course.name || "Unnamed Course"} (Fee: {(course.fee || 0).toLocaleString()} JMD)
+                        </p>
+                        <button
+                          onClick={() => handleDeleteCourse(course.id)}
+                          className="mt-2 px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-500"
+                        >
+                          Delete Course
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-red-800">No courses found.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -1382,50 +1568,57 @@ export default function Dashboard() {
               <h3 className="text-xl font-semibold text-red-800 mb-4">Accounts Admin Dashboard</h3>
               <button
                 onClick={downloadFinancialReport}
-                className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 mb-4"
+                className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700"
               >
                 Download Financial Report
               </button>
               {allStudents.length ? (
                 allStudents.map((s: StudentData) => (
-                  <div key={s.id} className="bg-white p-4 rounded-lg shadow-md">
-                    <p className="text-lg font-medium text-red-800 mb-2">{s.name || "Unnamed"}</p>
-                    <p className="text-red-800">Total Owed: {(s.totalOwed || 0).toLocaleString()} JMD</p>
-                    <p className="text-red-800">Total Paid: {(s.totalPaid || 0).toLocaleString()} JMD</p>
-                    <p className="text-red-800">Balance: {(s.balance || 0).toLocaleString()} JMD</p>
-                    <p className="text-red-800">Status: {s.paymentStatus || "Unpaid"}</p>
-                    <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
-                    <div className="mt-2">
-                      <h4 className="text-red-800 font-medium">Transactions</h4>
+                  <div key={s.id} className="bg-white p-6 rounded-lg shadow-md">
+                    <p className="text-lg font-medium text-red-800 mb-4">{s.name || "Unnamed"}</p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                      <div className="bg-gray-50 p-4 rounded-md">
+                        <p className="text-red-800">Total Owed: {(s.totalOwed || 0).toLocaleString()} JMD</p>
+                        <p className="text-red-800">Total Paid: {(s.totalPaid || 0).toLocaleString()} JMD</p>
+                        <p className="text-red-800">Balance: {(s.balance || 0).toLocaleString()} JMD</p>
+                        <p className="text-red-800">Status: {s.paymentStatus || "Unpaid"}</p>
+                        <p className="text-red-800">Clearance: {s.clearance ? "Yes" : "No"}</p>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <button
+                          onClick={() => handleGrantClearance(s.id)}
+                          disabled={s.clearance}
+                          className={`px-4 py-2 rounded-md text-white ${
+                            s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                          }`}
+                        >
+                          Grant Clearance
+                        </button>
+                        <button
+                          onClick={() => handleRemoveClearance(s.id)}
+                          disabled={!s.clearance}
+                          className={`px-4 py-2 rounded-md text-white ${
+                            !s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
+                          }`}
+                        >
+                          Remove Clearance
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-red-800 font-medium mb-3">Transaction History</h4>
                       {s.transactions && Array.isArray(s.transactions) && s.transactions.length ? (
-                        s.transactions.map((txn: Transaction) => (
-                          <p key={txn.id || txn.date} className="text-red-800">
-                            {new Date(txn.date).toLocaleString()}: {(txn.amount || 0).toLocaleString()} JMD - {txn.status || "Unknown"}
-                          </p>
-                        ))
+                        <div className="space-y-2">
+                          {s.transactions.map((txn: Transaction) => (
+                            <p key={txn.id || txn.date} className="text-red-800 bg-gray-50 p-3 rounded-md">
+                              {new Date(txn.date).toLocaleString()}: {(txn.amount || 0).toLocaleString()} JMD -{" "}
+                              {txn.status || "Unknown"}
+                            </p>
+                          ))}
+                        </div>
                       ) : (
                         <p className="text-red-800">No transactions.</p>
                       )}
-                    </div>
-                    <div className="flex gap-4 mt-2">
-                      <button
-                        onClick={() => handleGrantClearance(s.id)}
-                        disabled={s.clearance}
-                        className={`px-4 py-2 rounded-md text-white ${
-                          s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
-                        }`}
-                      >
-                        Grant Clearance
-                      </button>
-                      <button
-                        onClick={() => handleRemoveClearance(s.id)}
-                        disabled={!s.clearance}
-                        className={`px-4 py-2 rounded-md text-white ${
-                          !s.clearance ? "bg-gray-400 cursor-not-allowed" : "bg-red-800 hover:bg-red-700"
-                        }`}
-                      >
-                        Remove Clearance
-                      </button>
                     </div>
                   </div>
                 ))
