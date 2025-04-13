@@ -36,6 +36,22 @@ export interface User {
 export interface StudentData {
   id: string;
   name: string;
+  active?: boolean; // Added the 'active' property
+}
+
+
+
+export interface StudentData {
+  id: string;
+  name: string;
+
+  lastOnline?: string; // Added lastOnline property
+}
+
+
+export interface StudentData {
+  id: string;
+  name: string;
   email: string;
   lecturerId: string | null;
   courses: Course[];

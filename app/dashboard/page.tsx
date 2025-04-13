@@ -12,6 +12,7 @@ import {
   setDoc,
   addDoc,
   onSnapshot,
+  deleteDoc,
 } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -32,6 +33,14 @@ import {
 // Define Role type
 type Role = "student" | "teacher" | "admin" | "accountsadmin";
 
+// Define Payment type
+interface Payment {
+  id: string;
+  amount: number;
+  date: string;
+  description: string;
+}
+
 // Utility to validate URLs
 const isValidUrl = (url: string): boolean => {
   try {
@@ -43,14 +52,33 @@ const isValidUrl = (url: string): boolean => {
 };
 
 // Centralized role-based permissions
-const hasPermission = (role: Role, allowedRoles: Role[]): boolean => allowedRoles.includes(role);
+const hasPermission = (role: Role, allowedRoles: Role[]): boolean =>
+  allowedRoles.includes(role);
+
+// Utility to download CSV
+const downloadCSV = (data: any[], filename: string) => {
+  if (!data.length) {
+    alert("No data to download");
+    return;
+  }
+  const csv = [
+    Object.keys(data[0]).join(","),
+    ...data.map((row) => Object.values(row).map((v) => `"${v}"`).join(",")),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  window.URL.revokeObjectURL(url);
+};
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
   const [studentData, setStudentData] = useState<StudentData | null>(null);
-  const [allStudents, setAllStudents] = useState<StudentData[]>([]);
+  const [allStudents, setAllStudents] = useState<(StudentData & { payments?: Payment[]; email?: string })[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
-  const [allLecturers, setAllLecturers] = useState<User[]>([]);
   const [role, setRole] = useState<Role | null>(null);
   const [username, setUsername] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -95,6 +123,16 @@ export default function Dashboard() {
     return "Good Night 🌟";
   }, []);
 
+  // Memoized filtered students
+  const filteredStudents = useMemo(() => {
+    if (!searchQuery) return allStudents;
+    return allStudents.filter(
+      (s) =>
+        (s.name?.toLowerCase() || "").includes(searchQuery.toLowerCase()) ||
+        s.id.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [allStudents, searchQuery]);
+
   // Fetch data with real-time listeners
   useEffect(() => {
     if (!user) {
@@ -111,8 +149,6 @@ export default function Dashboard() {
 
       try {
         const userDoc = doc(db, "users", currentUser.uid);
-        let unsubscribeNotifications: (() => void) | undefined; // Declare unsubscribeNotifications
-        let unsubscribeStudent: (() => void) | undefined; // Move declaration to outer scope
         const unsubscribeUser = onSnapshot(userDoc, async (snap) => {
           if (!snap.exists()) {
             setError("User not found");
@@ -120,21 +156,34 @@ export default function Dashboard() {
             return;
           }
 
-          const data = snap.data() as User;
+          const data = snap.data() as User & {
+            clearance?: boolean;
+            lastOnline?: string;
+            active?: boolean;
+          };
+          const userRole = data.role as Role;
+          if (!["student", "teacher", "admin", "accountsadmin"].includes(userRole)) {
+            setError("Invalid user role");
+            setLoading(false);
+            return;
+          }
           setUserData(data);
-          setRole(data.role as Role);
+          setRole(userRole);
           setUsername(data.name || "User");
           setLoading(false);
 
-          // Fetch student data and notifications
+          let unsubscribeStudent: (() => void) | undefined;
           let unsubscribeNotifications: (() => void) | undefined;
-          if (hasPermission(data.role as Role, ["student", "teacher"])) {
+
+          // Fetch student data and notifications
+          if (hasPermission(userRole, ["student", "teacher"])) {
             const studentDoc = doc(db, "students", currentUser.uid);
             unsubscribeStudent = onSnapshot(studentDoc, (snap) => {
               if (snap.exists()) {
                 const student = snap.data() as StudentData;
                 setStudentData({
                   ...student,
+                  id: currentUser.uid,
                   transactions: student.transactions || [],
                   notifications: student.notifications || [],
                 });
@@ -143,7 +192,7 @@ export default function Dashboard() {
               }
             });
 
-            if (data.role === "student") {
+            if (userRole === "student") {
               const notificationsCollection = collection(db, "students", currentUser.uid, "notifications");
               unsubscribeNotifications = onSnapshot(notificationsCollection, (snapshot) => {
                 const notifications = snapshot.docs.map((doc) => ({
@@ -154,21 +203,66 @@ export default function Dashboard() {
                   prev ? { ...prev, notifications: notifications || [] } : prev
                 );
               });
+
+              // Fetch test responses and submissions for student
+              const coursesSnap = await getDocs(collection(db, "courses"));
+              for (const d of coursesSnap.docs) {
+                const testsSnap = await getDocs(collection(db, "courses", d.id, "tests"));
+                for (const t of testsSnap.docs) {
+                  const resp = await getDoc(doc(db, "courses", d.id, "tests", t.id, "responses", currentUser.uid));
+                  if (resp.exists()) {
+                    setTestResponses((prev) => ({
+                      ...prev,
+                      [t.id]: resp.data() as TestResponse,
+                    }));
+                  }
+                }
+                const courseworkSnap = await getDocs(collection(db, "courses", d.id, "coursework"));
+                for (const c of courseworkSnap.docs) {
+                  const sub = await getDoc(doc(db, "courses", d.id, "coursework", c.id, "submissions", currentUser.uid));
+                  if (sub.exists()) {
+                    setSubmissions((prev) => ({
+                      ...prev,
+                      [c.id]: sub.data() as Submission,
+                    }));
+                  }
+                }
+              }
             }
           }
 
-          // Fetch additional data for teacher/admin
-          if (hasPermission(data.role as Role, ["teacher", "admin"])) {
+          // Fetch additional data for teacher/admin/accountsadmin
+          if (hasPermission(userRole, ["teacher", "admin", "accountsadmin"])) {
             const studentsSnap = await getDocs(collection(db, "students"));
-            const students = studentsSnap.docs.map((d) => ({
-              id: d.id,
-              ...d.data(),
-              transactions: d.data().transactions || [],
-              notifications: d.data().notifications || [],
-            })) as StudentData[];
+            const students = await Promise.all(
+              studentsSnap.docs.map(async (d) => {
+                const studentData = d.data() as StudentData & {
+                  clearance?: boolean;
+                  lastOnline?: string;
+                  active?: boolean;
+                  email?: string;
+                };
+                const paymentsSnap = await getDocs(collection(db, "students", d.id, "payments"));
+                const payments = paymentsSnap.docs.map((p) => ({
+                  id: p.id,
+                  ...p.data(),
+                })) as Payment[];
+                return {
+                  ...studentData,
+                  id: d.id,
+                  email: studentData.email || currentUser.email || "",
+                  transactions: studentData.transactions || [],
+                  notifications: studentData.notifications || [],
+                  payments: payments || [],
+                  clearance: studentData.clearance ?? false,
+                  lastOnline: studentData.lastOnline || "",
+                  active: studentData.active ?? true,
+                };
+              })
+            );
             setAllStudents(students);
 
-            if (data.role === "teacher" && students.length) {
+            if (userRole === "teacher" && students.length) {
               setSelectedStudentId(students[0].id);
               if (students[0].courses?.length) {
                 setSelectedCourseName(students[0].courses[0].name);
@@ -186,59 +280,39 @@ export default function Dashboard() {
                 })) as Resource[];
 
                 const testsSnap = await getDocs(collection(db, "courses", d.id, "tests"));
-                const tests = await Promise.all(
-                  testsSnap.docs.map(async (t) => {
-                    const test = { id: t.id, ...t.data() } as Test;
-                    if (data.role === "student" && currentUser) {
-                      const resp = await getDoc(
-                        doc(db, "courses", d.id, "tests", t.id, "responses", currentUser.uid)
-                      );
-                      if (resp.exists()) {
-                        setTestResponses((prev) => ({
-                          ...prev,
-                          [t.id]: resp.data() as TestResponse,
-                        }));
-                      }
-                    }
-                    return test;
-                  })
-                );
+                const tests = testsSnap.docs.map((t) => ({
+                  id: t.id,
+                  ...t.data(),
+                })) as Test[];
 
                 const courseworkSnap = await getDocs(collection(db, "courses", d.id, "coursework"));
-                const coursework = await Promise.all(
-                  courseworkSnap.docs.map(async (c) => {
-                    const cw = { id: c.id, ...c.data() } as Coursework;
-                    if (data.role === "student" && currentUser) {
-                      const sub = await getDoc(
-                        doc(db, "courses", d.id, "coursework", c.id, "submissions", currentUser.uid)
-                      );
-                      if (sub.exists()) {
-                        setSubmissions((prev) => ({
-                          ...prev,
-                          [c.id]: sub.data() as Submission,
-                        }));
-                      }
-                    }
-                    return cw;
-                  })
-                );
+                const coursework = courseworkSnap.docs.map((c) => ({
+                  id: c.id,
+                  ...c.data(),
+                })) as Coursework[];
 
                 return {
                   id: d.id,
                   ...course,
-                  resources,
-                  tests,
-                  coursework,
+                  resources: resources || [],
+                  tests: tests || [],
+                  coursework: coursework || [],
                 } as Course;
               })
             );
             setAllCourses(courses);
           }
+
+          // Cleanup for student and notifications subscriptions
+          return () => {
+            if (unsubscribeStudent) unsubscribeStudent();
+            if (unsubscribeNotifications) unsubscribeNotifications();
+          };
         });
+
+        // Cleanup for user snapshot
         return () => {
           unsubscribeUser();
-          if (unsubscribeStudent) unsubscribeStudent(); // Now unsubscribeStudent is accessible here
-          if (unsubscribeNotifications) unsubscribeNotifications();
         };
       } catch (e) {
         console.error("Error fetching data:", e);
@@ -247,7 +321,10 @@ export default function Dashboard() {
       }
     });
 
-    return () => unsubscribeAuth();
+    // Cleanup for auth listener
+    return () => {
+      unsubscribeAuth();
+    };
   }, [user, router]);
 
   const calculateCourseAverage = (subjects: Subject[] = []): string => {
@@ -274,12 +351,12 @@ export default function Dashboard() {
     setAllStudents((prev) =>
       prev.map((s) => {
         if (s.id !== studentId) return s;
-        const courses = s.courses?.map((c) => {
+        const courses = (s.courses || []).map((c) => {
           if (c.name !== courseName) return c;
-          const subjects = c.subjects?.map((sub) => {
+          const subjects = (c.subjects || []).map((sub) => {
             if (sub.name !== subjectName) return sub;
             if (field === "comments") return { ...sub, comments: value };
-            const grades = { ...sub.grades, [field]: value };
+            const grades = { ...(sub.grades || {}), [field]: value };
             const classwork = Object.keys(grades)
               .filter((k) => k.startsWith("C"))
               .map((k) => parseFloat(grades[k] || "0"))
@@ -289,9 +366,9 @@ export default function Dashboard() {
               grades.final = (classwork.reduce((sum, v) => sum + v, 0) / classwork.length * 0.4 + exam * 0.6).toFixed(2);
             }
             return { ...sub, grades };
-          }) || [];
+          });
           return { ...c, subjects };
-        }) || [];
+        });
         return { ...s, courses };
       })
     );
@@ -304,7 +381,7 @@ export default function Dashboard() {
       return;
     }
     try {
-      await updateDoc(doc(db, "students", studentId), { courses: student.courses });
+      await updateDoc(doc(db, "students", studentId), { courses: student.courses || [] });
       alert("Grades updated");
     } catch (e) {
       console.error("Error updating student:", e);
@@ -346,15 +423,16 @@ export default function Dashboard() {
 
   const handleTestAnswerChange = (testId: string, questionIndex: number, answer: string) => {
     if (!user) return;
-    setTestResponses((prev) => ({
-      ...prev,
-      [testId]: {
-        id: user.uid,
-        answers: { ...(prev[testId]?.answers || {}), [questionIndex]: answer },
-        submittedAt: prev[testId]?.submittedAt || null,
-        score: prev[testId]?.score || 0,
-      },
-    }));
+    setTestResponses((prev) => {
+      const currentResponse = prev[testId] || { id: user.uid, answers: {}, submittedAt: null, score: 0 };
+      return {
+        ...prev,
+        [testId]: {
+          ...currentResponse,
+          answers: { ...currentResponse.answers, [questionIndex]: answer },
+        },
+      };
+    });
   };
 
   const handleSubmitTest = async (courseId: string, testId: string) => {
@@ -560,6 +638,91 @@ export default function Dashboard() {
     }
   };
 
+  const handleToggleClearance = async (studentId: string, currentClearance: boolean) => {
+    if (!role || !hasPermission(role, ["admin", "accountsadmin"])) return;
+    try {
+      await updateDoc(doc(db, "students", studentId), { clearance: !currentClearance });
+      setAllStudents((prev) =>
+        prev.map((s) =>
+          s.id === studentId ? { ...s, clearance: !currentClearance } : s
+        )
+      );
+      alert(`Clearance ${currentClearance ? "removed" : "granted"}`);
+    } catch (e) {
+      console.error("Error toggling clearance:", e);
+      alert("Failed to update clearance");
+    }
+  };
+
+  const handleDownloadStudentBalance = (student: StudentData & { payments?: Payment[] }) => {
+    const data = (student.payments || []).map((p) => ({
+      Date: new Date(p.date).toLocaleString(),
+      Amount: p.amount.toFixed(2),
+      Description: p.description,
+    }));
+    downloadCSV(data, `${student.name || "student"}_balance.csv`);
+  };
+
+  const handleDownloadAllBalances = () => {
+    const data = allStudents.flatMap((s) =>
+      (s.payments || []).map((p) => ({
+        Student: s.name || "Unknown",
+        Date: new Date(p.date).toLocaleString(),
+        Amount: p.amount.toFixed(2),
+        Description: p.description,
+      }))
+    );
+    downloadCSV(data, "all_students_balances.csv");
+  };
+
+  const handleDeactivateAccount = async (studentId: string, currentActive: boolean) => {
+    if (!role || !hasPermission(role, ["admin"])) return;
+    try {
+      await updateDoc(doc(db, "students", studentId), { active: !currentActive });
+      setAllStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, active: !currentActive } : s))
+      );
+      alert(`Account ${currentActive ? "deactivated" : "reactivated"}`);
+    } catch (e) {
+      console.error("Error toggling account status:", e);
+      alert("Failed to update account status");
+    }
+  };
+
+  const handleDeleteAccount = async (studentId: string) => {
+    if (!role || !hasPermission(role, ["admin"])) return;
+    if (!confirm("Are you sure you want to permanently delete this account?")) return;
+    try {
+      await deleteDoc(doc(db, "students", studentId));
+      await deleteDoc(doc(db, "users", studentId));
+      setAllStudents((prev) => prev.filter((s) => s.id !== studentId));
+      alert("Account deleted");
+    } catch (e) {
+      console.error("Error deleting account:", e);
+      alert("Failed to delete account");
+    }
+  };
+
+  const handleResetPassword = async (studentId: string, email: string) => {
+    if (!role || !hasPermission(role, ["admin"])) return;
+    if (!email) {
+      alert("No email provided for this user");
+      return;
+    }
+    const newPassword = prompt("Enter new password:");
+    if (!newPassword || newPassword.length < 6) {
+      alert("Password must be at least 6 characters");
+      return;
+    }
+    try {
+      // Placeholder: Requires Firebase Admin SDK for production
+      alert("Password reset requires server-side implementation. Contact support.");
+    } catch (e) {
+      console.error("Error resetting password:", e);
+      alert("Failed to reset password");
+    }
+  };
+
   if (loading) return <p className="text-gray-600 text-center">Loading...</p>;
   if (error) return <p className="text-red-600 text-center">{error}</p>;
   if (!userData || !role) return <p className="text-gray-600 text-center">Please log in</p>;
@@ -661,20 +824,15 @@ export default function Dashboard() {
                                           <p className="text-blue-600 font-medium">{t.title}</p>
                                           {testResponses[t.id]?.submittedAt ? (
                                             <p className="text-gray-600">
-                                              Submitted:{" "}
-                                              {testResponses[t.id].submittedAt
-                                                ? new Date(testResponses[t.id].submittedAt || "").toLocaleString()
-                                                : "N/A"}
+                                              Submitted: {testResponses[t.id].submittedAt ? new Date(testResponses[t.id].submittedAt || "").toLocaleString() : "N/A"}
                                               <br />
-                                              Score: {testResponses[t.id].score?.toFixed(2)}%
+                                              Score: {testResponses[t.id].score?.toFixed(2) || "N/A"}%
                                             </p>
                                           ) : (
                                             <>
                                               {t.questions.map((q, i) => (
                                                 <div key={i} className="mt-2">
-                                                  <p className="text-gray-600">
-                                                    {i + 1}. {q.question}
-                                                  </p>
+                                                  <p className="text-gray-600">{i + 1}. {q.question}</p>
                                                   {q.options?.length > 1 ? (
                                                     q.options.map((o, j) => (
                                                       <label key={j} className="block text-gray-600">
@@ -709,7 +867,8 @@ export default function Dashboard() {
                                                 className="mt-3 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
                                                 disabled={
                                                   !testResponses[t.id]?.answers ||
-                                                  Object.keys(testResponses[t.id].answers).length !== t.questions.length
+                                                  Object.keys(testResponses[t.id]?.answers || {}).length !==
+                                                    t.questions.length
                                                 }
                                               >
                                                 Submit Test
@@ -737,8 +896,7 @@ export default function Dashboard() {
                                           <p className="text-gray-600">Weight: {cw.weight}%</p>
                                           {submissions[cw.id] ? (
                                             <p className="text-gray-600">
-                                              Submitted:{" "}
-                                              {new Date(submissions[cw.id].submittedAt).toLocaleString()}
+                                              Submitted: {new Date(submissions[cw.id].submittedAt).toLocaleString()}
                                             </p>
                                           ) : (
                                             <div className="mt-2">
@@ -1015,7 +1173,7 @@ export default function Dashboard() {
                       <option value="">Select Student</option>
                       {allStudents.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name}
+                          {s.name || "Unknown"}
                         </option>
                       ))}
                     </select>
@@ -1050,7 +1208,7 @@ export default function Dashboard() {
                       <option value="">Select Student</option>
                       {allStudents.map((s) => (
                         <option key={s.id} value={s.id}>
-                          {s.name}
+                          {s.name || "Unknown"}
                         </option>
                       ))}
                     </select>
@@ -1067,16 +1225,15 @@ export default function Dashboard() {
                             <option key={c.name} value={c.name}>
                               {c.name}
                             </option>
-                          ))}
+                          )) || []}
                       </select>
                     )}
-                    {selectedStudentId &&
-                      selectedCourseName &&
+                    {selectedStudentId && selectedCourseName ? (
                       allStudents
                         .filter((s) => s.id === selectedStudentId)
                         .map((s) => (
                           <div key={s.id} className="space-y-4">
-                            <p className="text-lg font-medium text-blue-600">{s.name}</p>
+                            <p className="text-lg font-medium text-blue-600">{s.name || "Unknown"}</p>
                             {s.courses
                               ?.filter((c) => c.name === selectedCourseName)
                               .map((c) => (
@@ -1183,74 +1340,149 @@ export default function Dashboard() {
                                 </div>
                               ))}
                           </div>
-                        ))}
+                        ))
+                    ) : (
+                      <p className="text-gray-600">Select a student and course to manage grades.</p>
+                    )}
                   </div>
                 </div>
               </div>
             </div>
           )}
 
-          {role === "admin" && (
+          {(role === "admin" || role === "accountsadmin") && (
             <div className="space-y-8">
               <div className="bg-white p-6 rounded-lg shadow">
-                <h3 className="text-xl font-semibold text-blue-600 mb-4">Admin Dashboard</h3>
-                <p className="text-gray-600 mb-4">Welcome to the Admin Dashboard. Here you can manage all users and courses.</p>
-                <div className="space-y-6">
-                  <div>
-                    <h4 className="text-lg font-medium text-blue-600 mb-3">All Students</h4>
-                    {allStudents.length ? (
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-blue-600 text-white">
-                            <th className="p-2 border">Name</th>
-                            <th className="p-2 border">ID</th>
-                            <th className="p-2 border">Courses</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {allStudents.map((s) => (
-                            <tr key={s.id}>
-                              <td className="p-2 border text-gray-600">{s.name}</td>
-                              <td className="p-2 border text-gray-600">{s.id}</td>
-                              <td className="p-2 border text-gray-600">
-                                {s.courses?.map((c) => c.name).join(", ") || "None"}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="text-gray-600">No students found.</p>
-                    )}
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-medium text-blue-600 mb-3">All Courses</h4>
-                    {allCourses.length ? (
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-blue-600 text-white">
-                            <th className="p-2 border">Name</th>
-                            <th className="p-2 border">ID</th>
-                            <th className="p-2 border">Resources</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {allCourses.map((c) => (
-                            <tr key={c.id}>
-                              <td className="p-2 border text-gray-600">{c.name}</td>
-                              <td className="p-2 border text-gray-600">{c.id}</td>
-                              <td className="p-2 border text-gray-600">
-                                {c.resources?.length || 0} resource(s)
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="text-gray-600">No courses found.</p>
-                    )}
-                  </div>
+                <h3 className="text-xl font-semibold text-blue-600 mb-4">
+                  {role === "admin" ? "Admin Dashboard" : "Accounts Admin Dashboard"}
+                </h3>
+                <p className="text-gray-600 mb-4">
+                  Manage student accounts, payments, and clearances.
+                </p>
+                <div className="mb-6">
+                  <input
+                    type="text"
+                    placeholder="Search by name or ID"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full p-3 border rounded text-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-600"
+                  />
                 </div>
+                <div className="flex justify-end mb-4">
+                  <button
+                    onClick={handleDownloadAllBalances}
+                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-500"
+                  >
+                    Download All Balances
+                  </button>
+                </div>
+                {filteredStudents.length ? (
+                  <div className="grid grid-cols-1 gap-6">
+                    {filteredStudents.map((s) => (
+                      <div key={s.id} className="p-6 bg-gray-50 rounded-lg shadow">
+                        <div className="flex justify-between items-center mb-4">
+                          <div>
+                            <h4 className="text-lg font-medium text-blue-600">{s.name || "Unknown"}</h4>
+                            <p className="text-gray-600">ID: {s.id}</p>
+                            <p className="text-gray-600">
+                              Clearance: {s.clearance ? "Granted ✅" : "Not Granted ❌"}
+                            </p>
+                            <p className="text-gray-600">
+                              Status: {s.active ? "Active 🟢" : "Inactive 🔴"}
+                            </p>
+                            {role === "admin" && (
+                              <p className="text-gray-600">
+                                Last Online:{" "}
+                                {s.lastOnline
+                                  ? new Date(s.lastOnline).toLocaleString()
+                                  : "Never"}
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleToggleClearance(s.id, s.clearance ?? false)}
+                              className={`px-4 py-2 rounded text-white ${
+                                s.clearance
+                                  ? "bg-red-600 hover:bg-red-500"
+                                  : "bg-green-600 hover:bg-green-500"
+                              }`}
+                            >
+                              {s.clearance ? "Remove Clearance" : "Grant Clearance"}
+                            </button>
+                            <button
+                              onClick={() => handleDownloadStudentBalance(s)}
+                              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500"
+                            >
+                              Download Balance
+                            </button>
+                            {role === "admin" && (
+                              <>
+                                <button
+                                  onClick={() => handleDeactivateAccount(s.id, s.active ?? true)}
+                                  className={`px-4 py-2 rounded text-white ${
+                                    s.active
+                                      ? "bg-yellow-600 hover:bg-yellow-500"
+                                      : "bg-green-600 hover:bg-green-500"
+                                  }`}
+                                >
+                                  {s.active ? "Deactivate" : "Reactivate"}
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteAccount(s.id)}
+                                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-500"
+                                >
+                                  Delete
+                                </button>
+                                <button
+                                  onClick={() => handleResetPassword(s.id, s.email || "")}
+                                  className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-500"
+                                >
+                                  Reset Password
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div>
+                          <h5 className="text-blue-600 font-medium mb-2">Payment History</h5>
+                          {s.payments?.length ? (
+                            <table className="w-full border-collapse">
+                              <thead>
+                                <tr className="bg-blue-600 text-white">
+                                  <th className="p-2 border">Date</th>
+                                  <th className="p-2 border">Amount</th>
+                                  <th className="p-2 border">Description</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {s.payments.map((p) => (
+                                  <tr key={p.id}>
+                                    <td className="p-2 border text-gray-600">
+                                      {new Date(p.date).toLocaleString()}
+                                    </td>
+                                    <td className="p-2 border text-gray-600">${p.amount.toFixed(2)}</td>
+                                    <td className="p-2 border text-gray-600">{p.description}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p className="text-gray-600">No payments recorded.</p>
+                          )}
+                        </div>
+                        <div className="mt-4">
+                          <h5 className="text-blue-600 font-medium mb-2">Courses</h5>
+                          <p className="text-gray-600">
+                            {s.courses?.map((c) => c.name).join(", ") || "None"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-600 text-center">No students found.</p>
+                )}
               </div>
             </div>
           )}
