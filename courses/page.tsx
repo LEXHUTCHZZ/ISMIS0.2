@@ -286,7 +286,7 @@ export default function CoursePage() {
         date: new Date().toISOString(),
         status: "Completed",
       };
-      const updatedTransactions = [...studentData.transactions, newTransaction];
+      const updatedTransactions = [...(studentData.transactions || []), newTransaction];
       await updateDoc(doc(db, "students", user.uid), {
         balance: updatedBalance,
         totalPaid: updatedTotalPaid,
@@ -663,7 +663,7 @@ export default function CoursePage() {
                       <h4 className="text-red-800 font-medium">
                         Transaction History
                       </h4>
-                      {studentData.transactions.length ? (
+                      {studentData.transactions?.length ? (
                         studentData.transactions.map((txn) => (
                           <p key={txn.id} className="text-red-800">
                             {new Date(txn.date).toLocaleString()}:{" "}
@@ -1156,8 +1156,8 @@ export default function CoursePage() {
                     </p>
                     <div className="mt-2">
                       <h4 className="text-red-800 font-medium">Transactions</h4>
-                      {s.transactions.length ? (
-                        s.transactions.map((txn) => (
+                      {(s.transactions ?? []).length ? (
+                        (s.transactions ?? []).map((txn) => (
                           <p key={txn.id} className="text-red-800">
                             {new Date(txn.date).toLocaleString()}:{" "}
                             {txn.amount.toLocaleString()} JMD - {txn.status}

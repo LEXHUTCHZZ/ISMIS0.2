@@ -36,32 +36,21 @@ export interface User {
 export interface StudentData {
   id: string;
   name: string;
-  active?: boolean; // Added the 'active' property
-}
-
-
-
-export interface StudentData {
-  id: string;
-  name: string;
-
-  lastOnline?: string; // Added lastOnline property
-}
-
-
-export interface StudentData {
-  id: string;
-  name: string;
   email: string;
-  lecturerId: string | null;
+  active?: boolean; // Added the 'active' property
   courses: Course[];
+  notifications: Notification[];
+  lecturerId: string | null;// Consolidated type
   totalOwed: number;
   totalPaid: number;
   balance: number;
-  paymentStatus: string;
-  clearance: boolean;
-  transactions: { id: string; amount: number; date: string; status: string }[];
-  notifications: Notification[];
+  enrollmentDate?: string; // Made optional to avoid conflicts
+  status?: string; // Made optional to avoid conflicts
+  testResponses?: { [testId: string]: TestResponse };
+  lastOnline?: string; // Added lastOnline property
+  paymentStatus?: string;
+  clearance?: boolean;
+  transactions?: { id: string; amount: number; date: string; status: string }[];
   idNumber?: string;
   phoneNumber?: string;
   homeAddress?: string;
@@ -75,6 +64,13 @@ export interface Course {
   resources: Resource[];
   tests: Test[];
   coursework: Coursework[]; // Add this line
+}
+
+export interface Course {
+  id: string;
+  name: string;
+
+  teacherId?: string; // Add teacherId property
 }
 
 
@@ -98,6 +94,13 @@ export interface TestResponse {
   answers: { [questionIndex: number]: string };
   submittedAt: string | null;
   score: number;
+}
+
+
+export interface TestResponse {
+  studentId: string;
+ 
+  grade: number | null; // Add the grade property
 }
 
 export interface Subject {
