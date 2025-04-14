@@ -79,7 +79,9 @@ interface StudentData {
 interface Course {
   id: string;
   name: string;
+  lecturerId?: string;
   subjects?: Subject[];
+  description?: string;
 }
 
 interface Subject {
@@ -87,7 +89,13 @@ interface Subject {
   grades?: {
     C1?: string;
     C2?: string;
+    C3?: string;
+    C4?: string;
     exam?: string;
+    project?: string;
+    participation?: string;
+    attendance?: string;
+    comments?: string;
     final?: string;
   };
 }
@@ -114,6 +122,19 @@ interface Resource {
   type: string;
   uploadDate: string;
   courseId: string;
+  uploadedBy?: string;
+}
+
+interface GradeForm {
+  C1: string;
+  C2: string;
+  C3: string;
+  C4: string;
+  exam: string;
+  project: string;
+  participation: string;
+  attendance: string;
+  comments: string;
 }
 
 export default function Dashboard() {
@@ -128,6 +149,22 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("grades");
+  const [selectedCourse, setSelectedCourse] = useState("");
+  const [selectedStudent, setSelectedStudent] = useState<StudentData | null>(null);
+  const [selectedSubject, setSelectedSubject] = useState("");
+  const [gradeData, setGradeData] = useState<GradeForm>({
+    C1: "",
+    C2: "",
+    C3: "",
+    C4: "",
+    exam: "",
+    project: "",
+    participation: "",
+    attendance: "",
+    comments: ""
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const { user } = useAuth();
 
@@ -211,6 +248,14 @@ export default function Dashboard() {
             ...doc.data(),
           })) as StudentData[];
           setAllStudents(studentsList);
+
+          // For teachers, fetch their assigned courses
+          if (userRole === "teacher") {
+            const teacherCourses = coursesList.filter(course => course.lecturerId === currentUser.uid);
+            if (teacherCourses.length > 0) {
+              setSelectedCourse(teacherCourses[0].id);
+            }
+          }
         }
 
         // Admin-specific data fetching
@@ -317,13 +362,16 @@ export default function Dashboard() {
             subject.name,
             subject.grades?.C1 || "N/A",
             subject.grades?.C2 || "N/A",
+            subject.grades?.C3 || "N/A",
+            subject.grades?.C4 || "N/A",
             subject.grades?.exam || "N/A",
+            subject.grades?.project || "N/A",
             subject.grades?.final || "N/A"
           ]);
           
           autoTable(doc, {
             startY: yPosition,
-            head: [['Subject', 'Classwork 1', 'Classwork 2', 'Exam', 'Final Grade']],
+            head: [['Subject', 'C1', 'C2', 'C3', 'C4', 'Exam', 'Project', 'Final']],
             body: gradeData,
           });
           
@@ -341,55 +389,115 @@ export default function Dashboard() {
     }
   };
 
-  const handleGradeUpdate = async (
-    studentId: string,
-    courseId: string,
-    subjectName: string,
-    field: string,
-    value: string
-  ) => {
-    if (role !== "teacher") return;
+  // Enhanced grade management functions
+  const handleGradeChange = (field: string, value: string) => {
+    setGradeData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const submitGrades = async () => {
+    if (!selectedStudent || !selectedCourse || !selectedSubject) return;
     
+    setIsSubmitting(true);
     try {
-      const studentRef = doc(db, "students", studentId);
+      const studentRef = doc(db, "students", selectedStudent.id);
       const studentSnap = await getDoc(studentRef);
-      if (!studentSnap.exists()) return;
-
-      const studentData = studentSnap.data() as StudentData;
-      const updatedCourses = studentData.courses?.map((course) => {
-        if (course.id === courseId) {
-          const updatedSubjects = course.subjects?.map((subject) => {
-            if (subject.name === subjectName) {
-              const updatedGrades = { ...subject.grades, [field]: value };
-              
-              // Calculate final grade (40% classwork, 60% exam)
-              const classworkKeys = Object.keys(updatedGrades).filter(k => k.startsWith("C"));
-              const classworkValues = classworkKeys
-                .map(k => parseFloat(updatedGrades[k as keyof typeof updatedGrades] || "0"))
-                .filter(v => !isNaN(v));
-              const exam = parseFloat(updatedGrades.exam || "0");
-              
-              if (classworkValues.length && !isNaN(exam)) {
-                const classworkAvg = classworkValues.reduce((sum, v) => sum + v, 0) / classworkValues.length;
-                updatedGrades.final = (classworkAvg * 0.4 + exam * 0.6).toFixed(2);
+      
+      if (studentSnap.exists()) {
+        const studentData = studentSnap.data() as StudentData;
+        const updatedCourses = studentData.courses?.map(course => {
+          if (course.id === selectedCourse) {
+            const updatedSubjects = course.subjects?.map(subject => {
+              if (subject.name === selectedSubject) {
+                return {
+                  ...subject,
+                  grades: {
+                    ...subject.grades,
+                    ...gradeData,
+                    final: calculateFinalGrade(gradeData)
+                  }
+                };
               }
-              
-              return { ...subject, grades: updatedGrades };
-            }
-            return subject;
-          });
-          return { ...course, subjects: updatedSubjects };
-        }
-        return course;
-      });
+              return subject;
+            });
+            return { ...course, subjects: updatedSubjects };
+          }
+          return course;
+        });
 
-      await updateDoc(studentRef, { courses: updatedCourses });
-      setAllStudents(allStudents.map((s) => 
-        s.id === studentId ? { ...s, courses: updatedCourses || [] } : s
-      ));
-    } catch (err: any) {
-      console.error("Error updating grade:", err);
-      alert("Failed to update grade: " + err.message);
+        await updateDoc(studentRef, { courses: updatedCourses });
+        
+        // Update local state
+        setAllStudents(allStudents.map(student => 
+          student.id === selectedStudent.id 
+            ? { ...student, courses: updatedCourses || [] } 
+            : student
+        ));
+        
+        alert("Grades updated successfully!");
+      }
+    } catch (error) {
+      console.error("Error updating grades:", error);
+      alert("Failed to update grades");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const calculateFinalGrade = (grades: GradeForm): string => {
+    const courseworkKeys = Object.keys(grades)
+      .filter(k => k.startsWith("C") && grades[k as keyof GradeForm]);
+    const courseworkAvg = courseworkKeys.length > 0 
+      ? courseworkKeys
+        .map(k => parseFloat(grades[k as keyof GradeForm] || "0"))
+        .reduce((sum, val) => sum + val, 0) / courseworkKeys.length
+      : 0;
+    
+    const exam = parseFloat(grades.exam || "0");
+    const project = parseFloat(grades.project || "0");
+    const participation = parseFloat(grades.participation || "0");
+    const attendance = parseFloat(grades.attendance || "0");
+    
+    // Weighted calculation (customize weights as needed)
+    return (
+      (courseworkAvg * 0.3) + 
+      (exam * 0.4) + 
+      (project * 0.15) + 
+      (participation * 0.1) + 
+      (attendance * 0.05)
+    ).toFixed(2);
+  };
+
+  const loadStudentGrades = async (studentId: string) => {
+    const studentDoc = await getDoc(doc(db, "students", studentId));
+    if (studentDoc.exists()) {
+      const student = studentDoc.data() as StudentData;
+      setSelectedStudent(student);
+      
+      // Load existing grades if available
+      const course = student.courses?.find(c => c.id === selectedCourse);
+      const subject = course?.subjects?.find(s => s.name === selectedSubject);
+      if (subject?.grades) {
+        setGradeData({
+          C1: subject.grades.C1 || "",
+          C2: subject.grades.C2 || "",
+          C3: subject.grades.C3 || "",
+          C4: subject.grades.C4 || "",
+          exam: subject.grades.exam || "",
+          project: subject.grades.project || "",
+          participation: subject.grades.participation || "",
+          attendance: subject.grades.attendance || "",
+          comments: subject.grades.comments || ""
+        });
+      } else {
+        setGradeData({
+          C1: "", C2: "", C3: "", C4: "",
+          exam: "", project: "", participation: "", 
+          attendance: "", comments: ""
+        });
+      }
     }
   };
 
@@ -506,7 +614,7 @@ export default function Dashboard() {
   return (
     <ErrorBoundary>
       <div className="flex min-h-screen bg-gray-100">
-        {/* Sidebar - Simplified */}
+        {/* Sidebar */}
         <div className="w-64 bg-white shadow-md p-4">
           <h3 className="text-xl font-semibold text-red-800 mb-4">SMIS Menu</h3>
           <ul className="space-y-2">
@@ -681,141 +789,279 @@ export default function Dashboard() {
             {/* TEACHER DASHBOARD */}
             {role === "teacher" && (
               <div className="space-y-6">
-                <div className="bg-white p-6 rounded-lg shadow">
-                  <h2 className="text-xl font-semibold text-red-800 mb-4">Manage Students</h2>
-                  
-                  <input
-                    type="text"
-                    placeholder="Search students by name or email..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="p-2 border rounded text-red-800 w-full mb-4"
-                  />
-                  
-                  {/* Filter students based on search term */}
-                  {allStudents.filter(student => 
-                    student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                    student.email?.toLowerCase().includes(searchTerm.toLowerCase())
-                  ).length > 0 ? (
-                    allStudents
-                      .filter(student => 
-                        student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                        student.email?.toLowerCase().includes(searchTerm.toLowerCase())
-                      )
-                      .map((student) => (
-                        <div key={student.id} className="mb-6 border-b pb-4">
-                          <h3 className="text-lg font-medium text-red-800">
-                            {student.name} ({student.email})
-                          </h3>
-                          
-                          {allCourses.map((course) => (
-                            <div key={course.id} className="mt-4 pl-4">
-                              <h4 className="font-medium">{course.name}</h4>
-                              
-                              {/* Add Resource Form */}
-                              <div className="mt-2">
-                                <h5 className="text-sm font-medium text-red-800 mb-1">Add Resource</h5>
-                                <input
-                                  type="text"
-                                  placeholder="Resource Name"
-                                  className="p-2 border rounded text-red-800 w-full mb-2"
-                                />
-                                <input
-                                  type="url"
-                                  placeholder="Resource URL"
-                                  className="p-2 border rounded text-red-800 w-full mb-2"
-                                />
-                                <select className="p-2 border rounded text-red-800 w-full mb-2">
-                                  <option value="Video">Video</option>
-                                  <option value="Document">Document</option>
-                                  <option value="Link">Link</option>
-                                </select>
-                                <button
-                                  onClick={() => handleAddResource(
-                                    course.id,
-                                    "Sample Resource",
-                                    "https://example.com",
-                                    "Document"
-                                  )}
-                                  className="px-4 py-2 bg-red-800 text-white rounded hover:bg-red-700 w-full"
-                                >
-                                  Add Resource
-                                </button>
-                              </div>
+                <div className="flex space-x-4 mb-6">
+                  <button
+                    onClick={() => setActiveTab("grades")}
+                    className={`px-4 py-2 rounded ${activeTab === "grades" ? "bg-red-800 text-white" : "bg-gray-200"}`}
+                  >
+                    Grade Management
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("resources")}
+                    className={`px-4 py-2 rounded ${activeTab === "resources" ? "bg-red-800 text-white" : "bg-gray-200"}`}
+                  >
+                    Resource Management
+                  </button>
+                </div>
 
-                              {/* Grade Input Section */}
-                              {student.courses?.find(c => c.id === course.id)?.subjects?.map((subject) => (
-                                <div key={subject.name} className="mt-4 border-l-2 border-red-200 pl-4">
-                                  <h5 className="font-medium">{subject.name}</h5>
-                                  <div className="mt-2 space-y-2">
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-24">Classwork 1:</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        value={subject.grades?.C1 || ""}
-                                        onChange={(e) => handleGradeUpdate(
-                                          student.id,
-                                          course.id,
-                                          subject.name,
-                                          "C1",
-                                          e.target.value
-                                        )}
-                                        className="p-1 border rounded text-red-800 w-20"
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-24">Classwork 2:</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        value={subject.grades?.C2 || ""}
-                                        onChange={(e) => handleGradeUpdate(
-                                          student.id,
-                                          course.id,
-                                          subject.name,
-                                          "C2",
-                                          e.target.value
-                                        )}
-                                        className="p-1 border rounded text-red-800 w-20"
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-24">Exam:</span>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        max="100"
-                                        value={subject.grades?.exam || ""}
-                                        onChange={(e) => handleGradeUpdate(
-                                          student.id,
-                                          course.id,
-                                          subject.name,
-                                          "exam",
-                                          e.target.value
-                                        )}
-                                        className="p-1 border rounded text-red-800 w-20"
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <span className="w-24">Final Grade:</span>
-                                      <span className="font-medium">
-                                        {subject.grades?.final || "N/A"}
-                                      </span>
-                                    </div>
+                {activeTab === "grades" ? (
+                  <div className="bg-white p-6 rounded-lg shadow">
+                    <h2 className="text-xl font-semibold text-red-800 mb-4">Grade Management</h2>
+                    
+                    {/* Course Selection */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Select Course</label>
+                      <select
+                        value={selectedCourse}
+                        onChange={(e) => setSelectedCourse(e.target.value)}
+                        className="w-full p-2 border rounded"
+                      >
+                        {allCourses
+                          .filter(course => course.lecturerId === user?.uid)
+                          .map(course => (
+                            <option key={course.id} value={course.id}>{course.name}</option>
+                          ))}
+                      </select>
+                    </div>
+                    
+                    {/* Student Selection */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Select Student</label>
+                      <select
+                        value={selectedStudent?.id || ""}
+                        onChange={async (e) => {
+                          const studentId = e.target.value;
+                          if (!studentId) return;
+                          await loadStudentGrades(studentId);
+                        }}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value="">Select a student</option>
+                        {allStudents
+                          .filter(student => student.courses?.some(c => c.id === selectedCourse))
+                          .map(student => (
+                            <option key={student.id} value={student.id}>
+                              {student.name} ({student.email})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    
+                    {/* Subject Selection */}
+                    {selectedCourse && (
+                      <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Select Subject</label>
+                        <select
+                          value={selectedSubject}
+                          onChange={(e) => {
+                            setSelectedSubject(e.target.value);
+                            if (selectedStudent) {
+                              loadStudentGrades(selectedStudent.id);
+                            }
+                          }}
+                          className="w-full p-2 border rounded"
+                        >
+                          <option value="">Select a subject</option>
+                          {allCourses
+                            .find(c => c.id === selectedCourse)
+                            ?.subjects?.map(subject => (
+                              <option key={subject.name} value={subject.name}>{subject.name}</option>
+                            ))}
+                        </select>
+                      </div>
+                    )}
+                    
+                    {/* Grade Input Form */}
+                    {selectedStudent && selectedCourse && selectedSubject && (
+                      <div className="mt-6 border-t pt-4">
+                        <h3 className="text-lg font-medium text-red-800 mb-4">
+                          Enter Grades for {selectedStudent.name} - {selectedSubject}
+                        </h3>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Classwork Grades */}
+                          <div className="space-y-4">
+                            <h4 className="font-medium">Classwork</h4>
+                            {[1, 2, 3, 4].map(num => (
+                              <div key={`C${num}`} className="flex items-center">
+                                <label className="w-16">C{num}:</label>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  max="100"
+                                  value={gradeData[`C${num}` as keyof GradeForm]}
+                                  onChange={(e) => handleGradeChange(`C${num}`, e.target.value)}
+                                  className="p-1 border rounded w-20"
+                                  placeholder="0-100"
+                                />
+                              </div>
+                            ))}
+                          </div>
+                          
+                          {/* Other Assessments */}
+                          <div className="space-y-4">
+                            <div className="flex items-center">
+                              <label className="w-32">Exam:</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={gradeData.exam}
+                                onChange={(e) => handleGradeChange("exam", e.target.value)}
+                                className="p-1 border rounded w-20"
+                                placeholder="0-100"
+                              />
+                            </div>
+                            
+                            <div className="flex items-center">
+                              <label className="w-32">Project:</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={gradeData.project}
+                                onChange={(e) => handleGradeChange("project", e.target.value)}
+                                className="p-1 border rounded w-20"
+                                placeholder="0-100"
+                              />
+                            </div>
+                            
+                            <div className="flex items-center">
+                              <label className="w-32">Participation:</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={gradeData.participation}
+                                onChange={(e) => handleGradeChange("participation", e.target.value)}
+                                className="p-1 border rounded w-20"
+                                placeholder="0-100"
+                              />
+                            </div>
+                            
+                            <div className="flex items-center">
+                              <label className="w-32">Attendance:</label>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={gradeData.attendance}
+                                onChange={(e) => handleGradeChange("attendance", e.target.value)}
+                                className="p-1 border rounded w-20"
+                                placeholder="0-100"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        
+                        {/* Comments */}
+                        <div className="mt-4">
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
+                          <textarea
+                            value={gradeData.comments}
+                            onChange={(e) => handleGradeChange("comments", e.target.value)}
+                            className="w-full p-2 border rounded"
+                            rows={3}
+                            placeholder="Additional feedback..."
+                          />
+                        </div>
+                        
+                        {/* Final Grade Preview */}
+                        <div className="mt-4 p-3 bg-gray-50 rounded">
+                          <div className="flex justify-between items-center">
+                            <span className="font-medium">Calculated Final Grade:</span>
+                            <span className="text-xl font-bold">
+                              {gradeData.exam || gradeData.C1 ? calculateFinalGrade(gradeData) : "N/A"}
+                            </span>
+                          </div>
+                        </div>
+                        
+                        {/* Submit Button */}
+                        <div className="mt-6">
+                          <button
+                            onClick={submitGrades}
+                            disabled={isSubmitting}
+                            className="px-4 py-2 bg-red-800 text-white rounded hover:bg-red-700 disabled:bg-gray-400"
+                          >
+                            {isSubmitting ? "Saving..." : "Save Grades"}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="bg-white p-6 rounded-lg shadow">
+                    <h2 className="text-xl font-semibold text-red-800 mb-4">Resource Management</h2>
+                    
+                    <input
+                      type="text"
+                      placeholder="Search students by name or email..."
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
+                      className="p-2 border rounded text-red-800 w-full mb-4"
+                    />
+                    
+                    {/* Filter students based on search term */}
+                    {allStudents.filter(student => 
+                      student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                      student.email?.toLowerCase().includes(searchTerm.toLowerCase())
+                    ).length > 0 ? (
+                      allStudents
+                        .filter(student => 
+                          student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                          student.email?.toLowerCase().includes(searchTerm.toLowerCase())
+                        )
+                        .map((student) => (
+                          <div key={student.id} className="mb-6 border-b pb-4">
+                            <h3 className="text-lg font-medium text-red-800">
+                              {student.name} ({student.email})
+                            </h3>
+                            
+                            {allCourses
+                              .filter(course => course.lecturerId === user?.uid)
+                              .map((course) => (
+                                <div key={course.id} className="mt-4 pl-4">
+                                  <h4 className="font-medium">{course.name}</h4>
+                                  
+                                  {/* Add Resource Form */}
+                                  <div className="mt-2">
+                                    <h5 className="text-sm font-medium text-red-800 mb-1">Add Resource</h5>
+                                    <input
+                                      type="text"
+                                      placeholder="Resource Name"
+                                      className="p-2 border rounded text-red-800 w-full mb-2"
+                                    />
+                                    <input
+                                      type="url"
+                                      placeholder="Resource URL"
+                                      className="p-2 border rounded text-red-800 w-full mb-2"
+                                    />
+                                    <select className="p-2 border rounded text-red-800 w-full mb-2">
+                                      <option value="Video">Video</option>
+                                      <option value="Document">Document</option>
+                                      <option value="Link">Link</option>
+                                    </select>
+                                    <button
+                                      onClick={() => handleAddResource(
+                                        course.id,
+                                        "Sample Resource",
+                                        "https://example.com",
+                                        "Document"
+                                      )}
+                                      className="px-4 py-2 bg-red-800 text-white rounded hover:bg-red-700 w-full"
+                                    >
+                                      Add Resource
+                                    </button>
                                   </div>
                                 </div>
                               ))}
-                            </div>
-                          ))}
-                        </div>
-                      ))
-                  ) : (
-                    <p className="text-gray-600">No matching students found</p>
-                  )}
-                </div>
+                          </div>
+                        ))
+                    ) : (
+                      <p className="text-gray-600">No matching students found</p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
