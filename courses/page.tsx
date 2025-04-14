@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { auth, db } from "../lib/firebase"; // If importing from a file one level up // Adjusted the path to match the correct location of your firebase configuration file
+import { auth, db } from "../lib/firebase"; // If importing from a file one level up
 import { onAuthStateChanged } from "firebase/auth";
 import {
   doc,
@@ -274,7 +274,8 @@ export default function CoursePage() {
     }
   };
 
-  const handlePaymentSuccess = async (amount: number) => {
+  const handlePaymentSuccess = async (transaction: Transaction) => {
+    const amount = transaction.amount;
     if (!studentData || !user) return;
     try {
       const updatedBalance = (studentData.balance || 0) - amount;
@@ -400,6 +401,7 @@ export default function CoursePage() {
         clearance: false,
         transactions: [],
         notifications: [],
+        grades: {},
         idNumber: undefined,
         phoneNumber: undefined,
         homeAddress: undefined,
@@ -674,12 +676,14 @@ export default function CoursePage() {
                         <p className="text-red-800">No transactions.</p>
                       )}
                     </div>
-                    {(studentData.balance || 0) > 0 && (
-                      <CheckoutPage
-                        studentId={studentData.id}
-                        balance={studentData.balance || 0}
-                        onPaymentSuccess={handlePaymentSuccess}
-                      />
+                    {studentData.balance > 0 && (
+                      <div className="mt-4">
+                        <CheckoutPage
+                          studentId={studentData.id}
+                          amount={studentData.balance}
+                          onPaymentSuccess={handlePaymentSuccess}
+                        />
+                      </div>
                     )}
                   </div>
 

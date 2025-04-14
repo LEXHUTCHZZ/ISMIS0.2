@@ -64,6 +64,42 @@ export interface Course {
   resources: Resource[];
   tests: Test[];
   coursework: Coursework[]; // Add this line
+
+}
+
+export interface StudentData {
+  id: string;
+  name: string;
+  email: string;
+  lecturerId: string | null;
+  courses: Course[];
+  totalOwed: number;
+  totalPaid: number;
+  balance: number;
+  
+  notifications: Notification[];
+  grades: Record<string, number>;
+}
+
+export interface Course {
+  id: string;
+  name: string;
+  fee: number;
+ 
+  tests: Test[];
+}
+
+
+
+
+
+export interface Course {
+  id: string;
+  name: string;
+ 
+  assignments?:[];
+  announcements?: []; // Added announcements property
+
 }
 
 export interface Course {

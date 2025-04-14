@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, Component, ReactNode } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { auth, db } from "../../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import {
@@ -10,72 +10,212 @@ import {
   collection,
   getDocs,
   setDoc,
+  deleteDoc,
 } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../contexts/AuthContext";
-import {
-  StudentData,
-  Course,
-  Notification,
-  Resource,
-  Test,
-  TestQuestion,
-  TestResponse,
-  User,
-} from "../../models";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import CheckoutPage from "../../components/CheckoutPage";
 import { markNotificationAsRead } from "../../utils/utils";
-import {
-  sanitizeStudentData,
-  sanitizeCourse,
-  sanitizeUser,
-  sanitizeResource,
-  sanitizeTest,
-  sanitizeNotification,
-} from "../../utils/firestoreSanitizer";
 
-// Error Boundary Component
-interface ErrorBoundaryProps {
-  children: ReactNode;
+// Interfaces
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  profilePicture?: string;
 }
 
-interface ErrorBoundaryState {
-  hasError: boolean;
-  error?: Error;
+interface StudentData {
+  id: string;
+  name: string;
+  email: string;
+  lecturerId: string | null;
+  courses: Course[];
+  totalOwed: number;
+  totalPaid: number;
+  balance: number;
+  paymentStatus: string;
+  clearance: boolean;
+  transactions: Transaction[];
+  notifications: Notification[];
+  grades: Record<string, number>;
 }
 
-class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  constructor(props: ErrorBoundaryProps) {
-    super(props);
-    this.state = { hasError: false };
-  }
+interface Course {
+  id: string;
+  name: string;
+  teacherId: string;
+  resources: Resource[];
+  assignments: Assignment[];
+  tests: any[];
+}
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
-    return { hasError: true, error };
-  }
+interface Transaction {
+  id: string;
+  amount: number;
+  date: string;
+  status: string;
+}
 
-  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("ErrorBoundary caught an error:", error, errorInfo);
-  }
+interface Notification {
+  id?: string;
+  message: string;
+  date: string;
+  read: boolean;
+}
 
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded">
-          <p>Something went wrong.</p>
-          {this.state.error && (
-            <details className="mt-2 text-sm">
-              <summary>Error details</summary>
-              <pre>{this.state.error.toString()}</pre>
-            </details>
-          )}
-        </div>
-      );
+interface Resource {
+  id: string;
+  name: string;
+  type: string;
+  url: string;
+  uploadDate: string;
+}
+
+interface Assignment {
+  id: string;
+  courseId: string;
+  title: string;
+  description: string;
+  points: number;
+  createdAt: string;
+}
+
+// Resource Form Component
+const ResourceForm = ({
+  courseId,
+  onAddResource,
+}: {
+  courseId: string;
+  onAddResource: (name: string, type: string, url: string) => void;
+}) => {
+  const [name, setName] = useState("");
+  const [type, setType] = useState("");
+  const [url, setUrl] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !type.trim() || !url.trim()) {
+      setError("All fields are required.");
+      return;
     }
-    return this.props.children;
-  }
-}
+    if (!url.match(/^https?:\/\/[^\s$.?#].[^\s]*$/)) {
+      setError("Please enter a valid URL.");
+      return;
+    }
+    onAddResource(name, type, url);
+    setName("");
+    setType("");
+    setUrl("");
+    setError("");
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <input
+        type="text"
+        placeholder="Resource Name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        className="w-full p-2 border rounded text-blue-800"
+      />
+      <select
+        value={type}
+        onChange={(e) => setType(e.target.value)}
+        className="w-full p-2 border rounded text-blue-800"
+      >
+        <option value="">Select Type</option>
+        <option value="YouTube Video">YouTube Video</option>
+        <option value="PDF">PDF</option>
+        <option value="Other">Other</option>
+      </select>
+      <input
+        type="url"
+        placeholder="Resource URL"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        className="w-full p-2 border rounded text-blue-800"
+      />
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      <button
+        type="submit"
+        className="w-full px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+      >
+        Add Resource
+      </button>
+    </form>
+  );
+};
+
+// Assignment Form Component
+const AssignmentForm = ({
+  courseId,
+  onAddAssignment,
+}: {
+  courseId: string;
+  onAddAssignment: (title: string, description: string, points: number) => void;
+}) => {
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [points, setPoints] = useState(100);
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!title.trim()) {
+      setError("Title is required.");
+      return;
+    }
+    if (points < 0 || points > 1000) {
+      setError("Points must be between 0 and 1000.");
+      return;
+    }
+    onAddAssignment(title, description, points);
+    setTitle("");
+    setDescription("");
+    setPoints(100);
+    setError("");
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <input
+        type="text"
+        placeholder="Assignment Title"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
+        className="w-full p-2 border rounded text-blue-800"
+      />
+      <textarea
+        placeholder="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        className="w-full p-2 border rounded text-blue-800 min-h-[80px]"
+      />
+      <input
+        type="number"
+        placeholder="Points"
+        value={points}
+        onChange={(e) => setPoints(parseInt(e.target.value) || 0)}
+        className="w-full p-2 border rounded text-blue-800"
+        min="0"
+        max="1000"
+      />
+      {error && <p className="text-red-600 text-sm">{error}</p>}
+      <button
+        type="submit"
+        className="w-full px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+      >
+        Create Assignment
+      </button>
+    </form>
+  );
+};
 
 // Notification List Component
 const NotificationList = ({
@@ -85,261 +225,183 @@ const NotificationList = ({
   notifications: Notification[];
   onMarkAsRead: (notificationId: string) => void;
 }) => (
-  <div className="mt-4">
-    <h3 className="text-lg font-semibold text-red-800">Notifications</h3>
-    {notifications.length === 0 ? (
-      <p className="text-gray-600">No notifications</p>
-    ) : (
-      <ul className="space-y-2">
-        {notifications.map((notification) => (
-          <li key={notification.id} className="p-2 bg-white rounded shadow">
-            <p className="text-red-800">{notification.message}</p>
-            <p className="text-sm text-gray-500">
-              {new Date(notification.date).toLocaleString()}
+  <div className="space-y-2">
+    {notifications.length ? (
+      notifications.map((notif) => (
+        <div
+          key={notif.id || notif.date}
+          className="flex justify-between items-center p-2 bg-gray-50 rounded"
+        >
+          <div>
+            <p
+              className={`text-blue-800 ${
+                notif.read ? "opacity-50" : "font-medium"
+              }`}
+            >
+              {notif.message || "No message"}
             </p>
-            {!notification.read && (
-              <button
-                onClick={() => onMarkAsRead(notification.id)}
-                className="text-blue-600 hover:underline text-sm"
-              >
-                Mark as Read
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
+            <p className="text-sm text-gray-600">
+              {new Date(notif.date).toLocaleString()}
+            </p>
+          </div>
+          {!notif.read && notif.id && (
+            <button
+              onClick={() => onMarkAsRead(notif.id!)}
+              className="text-blue-600 hover:underline text-sm"
+            >
+              Mark as Read
+            </button>
+          )}
+        </div>
+      ))
+    ) : (
+      <p className="text-blue-800">No notifications.</p>
     )}
   </div>
 );
 
-// Resource Form Component
-const ResourceForm = ({
-  courseId,
-  onAddResource,
-}: {
-  courseId: string;
-  onAddResource: (courseId: string, name: string, url: string, type: string) => void;
-}) => {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [type, setType] = useState("Video");
-  const [error, setError] = useState("");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !url.trim() || !type) {
-      setError("Please fill in all fields.");
-      return;
-    }
-    if (!/^https?:\/\/[^\s$.?#].[^\s]*$/.test(url)) {
-      setError("Invalid URL format. Please use http:// or https://");
-      return;
-    }
-    onAddResource(courseId, name, url, type);
-    setName("");
-    setUrl("");
-    setType("Video");
-    setError("");
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="mt-4 space-y-2">
-      <input
-        type="text"
-        placeholder="Resource Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="p-2 border rounded text-red-800 w-full"
-        required
-      />
-      <input
-        type="url"
-        placeholder="Resource URL (https://...)"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        className="p-2 border rounded text-red-800 w-full"
-        required
-      />
-      <select
-        value={type}
-        onChange={(e) => setType(e.target.value)}
-        className="p-2 border rounded text-red-800 w-full"
-        required
-      >
-        <option value="Video">Video</option>
-        <option value="Document">Document</option>
-        <option value="Link">Link</option>
-      </select>
-      {error && <p className="text-red-600 text-sm">{error}</p>}
-      <button
-        type="submit"
-        className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full"
-      >
-        Add Resource
-      </button>
-    </form>
-  );
-};
-
-// Test Form Component
-const TestForm = ({
-  courseId,
-  onAddTest,
-}: {
-  courseId: string;
-  onAddTest: (courseId: string, title: string, questions: TestQuestion[]) => void;
-}) => {
-  const [title, setTitle] = useState("");
-  const [questions, setQuestions] = useState<TestQuestion[]>([{ question: "", options: [], correctAnswer: "" }]);
-  const [error, setError] = useState("");
-
-  const addQuestion = () => setQuestions([...questions, { question: "", options: [], correctAnswer: "" }]);
-  const removeQuestion = (index: number) => {
-    if (questions.length > 1) {
-      setQuestions(questions.filter((_, i) => i !== index));
-    }
-  };
-  const updateQuestion = (index: number, value: string) => {
-    const newQuestions = [...questions];
-    newQuestions[index] = { ...newQuestions[index], question: value };
-    setQuestions(newQuestions);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim()) {
-      setError("Please enter a test title.");
-      return;
-    }
-    if (questions.some((q) => !q.question.trim())) {
-      setError("Please fill in all questions.");
-      return;
-    }
-    onAddTest(courseId, title, questions);
-    setTitle("");
-    setQuestions([{ question: "", options: [], correctAnswer: "" }]);
-    setError("");
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="mt-4 space-y-2">
-      <input
-        type="text"
-        placeholder="Test Title"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        className="p-2 border rounded text-red-800 w-full"
-        required
-      />
-      {questions.map((question, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <input
-            type="text"
-            placeholder={`Question ${index + 1}`}
-            value={question.question}
-            onChange={(e) => updateQuestion(index, e.target.value)}
-            className="p-2 border rounded text-red-800 flex-1"
-            required
-          />
-          <button
-            type="button"
-            onClick={() => removeQuestion(index)}
-            className="p-2 text-red-800 hover:text-red-600"
-            disabled={questions.length <= 1}
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={addQuestion}
-          className="px-4 py-2 bg-gray-200 text-red-800 rounded-md hover:bg-gray-300 flex-1"
-        >
-          Add Question
-        </button>
-        <button
-          type="submit"
-          className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 flex-1"
-        >
-          Create Test
-        </button>
-      </div>
-      {error && <p className="text-red-600 text-sm">{error}</p>}
-    </form>
-  );
-};
-
-// Test Submission Form Component
-const TestSubmissionForm = ({
-  courseId,
-  test,
-  onSubmit,
-}: {
-  courseId: string;
-  test: Test;
-  onSubmit: (courseId: string, testId: string, answers: string[]) => void;
-}) => {
-  const [answers, setAnswers] = useState<string[]>(test.questions.map(() => ""));
-  const [error, setError] = useState("");
-
-  const updateAnswer = (index: number, value: string) => {
-    const newAnswers = [...answers];
-    newAnswers[index] = value;
-    setAnswers(newAnswers);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (answers.some((a) => !a.trim())) {
-      setError("Please answer all questions.");
-      return;
-    }
-    onSubmit(courseId, test.id, answers);
-    setError("");
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="mt-2 space-y-2">
-      {test.questions.map((question, index) => (
-        <div key={index} className="mb-2">
-          <p className="text-gray-600">{`Question ${index + 1}: ${question.question}`}</p>
-          <textarea
-            placeholder={`Your answer for question ${index + 1}`}
-            value={answers[index]}
-            onChange={(e) => updateAnswer(index, e.target.value)}
-            className="p-2 border rounded text-red-800 w-full min-h-[80px]"
-            required
-          />
-        </div>
-      ))}
-      {error && <p className="text-red-600 text-sm">{error}</p>}
-      <button
-        type="submit"
-        className="px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
-      >
-        Submit Test
-      </button>
-    </form>
-  );
-};
-
 // Main Dashboard Component
-type Role = "student" | "teacher" | "admin";
-
 export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
   const [studentData, setStudentData] = useState<StudentData | null>(null);
+  const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
-  const [role, setRole] = useState<Role | "">("");
+  const [allLecturers, setAllLecturers] = useState<User[]>([]);
+  const [role, setRole] = useState<string>("");
   const [username, setUsername] = useState("");
   const [greeting, setGreeting] = useState("");
-  const [testResponses, setTestResponses] = useState<Record<string, TestResponse>>({});
-  const [isLoading, setIsLoading] = useState(true);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+  const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const { user } = useAuth();
+
+  const fetchData = useCallback(async (currentUser: any) => {
+    setIsLoading(true);
+    try {
+      // Fetch user data
+      const userDocRef = doc(db, "users", currentUser.uid);
+      const userSnap = await getDoc(userDocRef);
+      if (!userSnap.exists()) {
+        throw new Error("User data not found.");
+      }
+      const fetchedUserData = { id: userSnap.id, ...userSnap.data() } as User;
+
+      setRole(fetchedUserData.role || "");
+      setUsername(fetchedUserData.name || "Unnamed");
+      setUserData(fetchedUserData);
+      const hour = new Date().getHours();
+      setGreeting(
+        hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening"
+      );
+
+      // Fetch student data if student
+      if (fetchedUserData.role === "student") {
+        const studentDocRef = doc(db, "students", currentUser.uid);
+        const studentSnap = await getDoc(studentDocRef);
+        let fetchedStudentData: StudentData | null = null;
+        if (studentSnap.exists()) {
+          fetchedStudentData = {
+            id: studentSnap.id,
+            ...studentSnap.data(),
+            transactions: studentSnap.data().transactions || [],
+            notifications: studentSnap.data().notifications || [],
+            grades: studentSnap.data().grades || {},
+            courses: studentSnap.data().courses || [],
+          } as StudentData;
+        }
+        if (!fetchedStudentData) {
+          const newStudent: StudentData = {
+            id: currentUser.uid,
+            name: fetchedUserData.name || "Student",
+            email: fetchedUserData.email || "",
+            lecturerId: null,
+            courses: [],
+            totalOwed: 0,
+            totalPaid: 0,
+            balance: 0,
+            paymentStatus: "Unpaid",
+            clearance: false,
+            transactions: [],
+            notifications: [],
+            grades: {},
+          };
+          await setDoc(studentDocRef, newStudent);
+          fetchedStudentData = newStudent;
+        }
+        setStudentData(fetchedStudentData);
+      }
+
+      // Fetch all students and lecturers for admin/teacher
+      if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
+        const studentsSnapshot = await getDocs(collection(db, "students"));
+        const studentsList = studentsSnapshot.docs.map((studentDoc) => ({
+          id: studentDoc.id,
+          ...studentDoc.data(),
+          transactions: studentDoc.data().transactions || [],
+          notifications: studentDoc.data().notifications || [],
+          grades: studentDoc.data().grades || {},
+          clearance: studentDoc.data().clearance ?? false,
+          courses: studentDoc.data().courses || [],
+        })) as StudentData[];
+        setAllStudents(studentsList);
+
+        const usersSnapshot = await getDocs(collection(db, "users"));
+        const lecturersList = usersSnapshot.docs
+          .map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }) as User)
+          .filter((u) => u.role === "teacher");
+        setAllLecturers(lecturersList);
+
+        if (fetchedUserData.role === "teacher" && studentsList.length > 0) {
+          const assignedStudent = studentsList.find(
+            (s) => s.lecturerId === currentUser.uid
+          );
+          setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
+        }
+      }
+
+      // Fetch courses
+      const coursesSnapshot = await getDocs(collection(db, "courses"));
+      const coursesList = await Promise.all(
+        coursesSnapshot.docs.map(async (courseDoc) => {
+          const courseData = courseDoc.data();
+          const resourcesSnapshot = await getDocs(
+            collection(db, "courses", courseDoc.id, "resources")
+          );
+          const assignmentsSnapshot = await getDocs(
+            collection(db, "courses", courseDoc.id, "assignments")
+          );
+          const resources = resourcesSnapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Resource
+          );
+          const assignments = assignmentsSnapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Assignment
+          );
+          return {
+            id: courseDoc.id,
+            name: courseData.name || "Unnamed Course",
+            teacherId: courseData.teacherId || "",
+            resources,
+            assignments,
+            tests: courseData.tests || [],
+          } as Course;
+        })
+      );
+      setAllCourses(coursesList);
+    } catch (err) {
+      console.error("Error fetching data:", err);
+      setError(
+        err instanceof Error ? err.message : "Failed to load dashboard data."
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -347,143 +409,34 @@ export default function Dashboard() {
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
         router.push("/auth/login");
         return;
       }
-
-      setIsLoading(true);
-      try {
-        // Fetch user data
-        const userDocRef = doc(db, "users", currentUser.uid);
-        const userSnap = await getDoc(userDocRef);
-        
-        if (!userSnap.exists()) {
-          throw new Error("User document does not exist");
-        }
-
-        const fetchedUserData = sanitizeUser(userSnap.data() as User);
-        const userRole = fetchedUserData.role as Role;
-        
-        if (!["student", "teacher", "admin"].includes(userRole)) {
-          throw new Error("Invalid user role");
-        }
-        
-        setRole(userRole);
-        setUsername(fetchedUserData.name || "User");
-        setUserData(fetchedUserData);
-        
-        const hour = new Date().getHours();
-        setGreeting(
-          hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening"
-        );
-
-        // Fetch student data if student
-        if (userRole === "student") {
-          const studentDocRef = doc(db, "students", currentUser.uid);
-          const studentSnap = await getDoc(studentDocRef);
-          
-          let studentData: StudentData;
-          if (studentSnap.exists()) {
-            studentData = sanitizeStudentData(studentSnap.data() as StudentData);
-          } else {
-            studentData = {
-              id: currentUser.uid,
-              name: fetchedUserData.name || "Student",
-              email: fetchedUserData.email || "",
-              courses: [],
-              notifications: [],
-              testResponses: {},
-              lecturerId: "",
-              totalOwed: 0,
-              totalPaid: 0,
-              balance: 0,
-              enrollmentDate: new Date().toISOString(),
-              status: "active",
-            };
-            await setDoc(studentDocRef, studentData);
-          }
-          setStudentData(studentData);
-        }
-
-        // Fetch courses
-        const coursesSnapshot = await getDocs(collection(db, "courses"));
-        const coursesList: Course[] = [];
-        
-        for (const courseDoc of coursesSnapshot.docs) {
-          const courseData = courseDoc.data();
-          
-          // Fetch resources
-          const resourcesSnapshot = await getDocs(
-            collection(db, "courses", courseDoc.id, "resources")
-          );
-          const resources = resourcesSnapshot.docs.map((doc) =>
-            sanitizeResource({ id: doc.id, ...doc.data() } as Resource)
-          );
-          
-          // Fetch tests
-          const testsSnapshot = await getDocs(
-            collection(db, "courses", courseDoc.id, "tests")
-          );
-          const tests: Test[] = [];
-          
-          for (const testDoc of testsSnapshot.docs) {
-            const testData = sanitizeTest(testDoc.data() as Test);
-            
-            if (userRole === "student") {
-              const responseSnap = await getDoc(
-                doc(db, "courses", courseDoc.id, "tests", testDoc.id, "responses", currentUser.uid)
-              );
-              if (responseSnap.exists()) {
-                const response = responseSnap.data() as TestResponse;
-                setTestResponses((prev) => ({ ...prev, [testDoc.id]: response }));
-              }
-            }
-            
-            tests.push({ ...testData, id: testDoc.id });
-          }
-          
-          coursesList.push(
-            sanitizeCourse({
-              id: courseDoc.id,
-              name: courseData.name || "Unnamed Course",
-              description: courseData.description || "No description",
-              resources,
-              tests,
-              teacherId: courseData.teacherId || "",
-            })
-          );
-        }
-        
-        setAllCourses(coursesList);
-      } catch (err) {
-        console.error("Error loading dashboard:", err);
-        setError(`Failed to load dashboard: ${err instanceof Error ? err.message : "Unknown error"}`);
-      } finally {
-        setIsLoading(false);
-      }
+      fetchData(currentUser);
     });
 
     return () => unsubscribe();
-  }, [user, router]);
+  }, [user, router, fetchData]);
 
-  const handleAddResource = async (courseId: string, name: string, url: string, type: string) => {
-    if (role !== "teacher" || !courseId) return;
-    
+  const handleAddResource = async (
+    courseId: string,
+    name: string,
+    type: string,
+    url: string
+  ) => {
+    if (!["teacher", "admin"].includes(role) || !user) return;
     try {
       const resourceRef = doc(collection(db, "courses", courseId, "resources"));
       const newResource: Resource = {
         id: resourceRef.id,
-        courseId,
         name,
-        url,
         type,
+        url,
         uploadDate: new Date().toISOString(),
       };
-      
       await setDoc(resourceRef, newResource);
-      
       setAllCourses((prev) =>
         prev.map((c) =>
           c.id === courseId
@@ -491,464 +444,834 @@ export default function Dashboard() {
             : c
         )
       );
+      alert("Resource added successfully!");
     } catch (err) {
       console.error("Error adding resource:", err);
-      setError(`Failed to add resource: ${err instanceof Error ? err.message : "Unknown error"}`);
+      alert(err instanceof Error ? err.message : "Failed to add resource.");
     }
   };
 
-  const handleAddTest = async (courseId: string, title: string, questions: TestQuestion[]) => {
-    if (role !== "teacher" || !courseId) return;
-    
+  const handleAddAssignment = async (
+    courseId: string,
+    title: string,
+    description: string,
+    points: number
+  ) => {
+    if (!["teacher", "admin"].includes(role) || !user) return;
     try {
-      const testRef = doc(collection(db, "courses", courseId, "tests"));
-      const newTest: Test = {
-        id: testRef.id,
+      const assignmentRef = doc(
+        collection(db, "courses", courseId, "assignments")
+      );
+      const newAssignment: Assignment = {
+        id: assignmentRef.id,
         courseId,
         title,
-        questions,
+        description,
+        points,
         createdAt: new Date().toISOString(),
       };
-      
-      await setDoc(testRef, newTest);
-      
+      await setDoc(assignmentRef, newAssignment);
       setAllCourses((prev) =>
         prev.map((c) =>
           c.id === courseId
-            ? { ...c, tests: [...(c.tests || []), newTest] }
+            ? { ...c, assignments: [...(c.assignments || []), newAssignment] }
             : c
         )
       );
+      alert("Assignment created successfully!");
     } catch (err) {
-      console.error("Error adding test:", err);
-      setError(`Failed to add test: ${err instanceof Error ? err.message : "Unknown error"}`);
+      console.error("Error adding assignment:", err);
+      alert(err instanceof Error ? err.message : "Failed to create assignment.");
     }
   };
 
-  const handleSubmitTestResponse = async (
-    courseId: string,
-    testId: string,
-    answers: string[]
-  ) => {
-    if (role !== "student" || !user || !courseId || !testId) return;
-    
-    try {
-      const responseRef = doc(
-        db,
-        "courses",
-        courseId,
-        "tests",
-        testId,
-        "responses",
-        user.uid
-      );
-      
-      const response: TestResponse = {
-        id: `${testId}-${user.uid}`,
-        studentId: user.uid,
-        answers,
-        submittedAt: new Date().toISOString(),
-        grade: null,
-        score: 0,
-      };
-      
-      await setDoc(responseRef, response);
-      
-      setTestResponses((prev) => ({ ...prev, [testId]: response }));
-      
-      if (studentData) {
-        setStudentData({
-          ...studentData,
-          testResponses: { ...studentData.testResponses, [testId]: response },
-        });
-      }
-    } catch (err) {
-      console.error("Error submitting test:", err);
-      setError(`Failed to submit test: ${err instanceof Error ? err.message : "Unknown error"}`);
-    }
-  };
-
-  const handleGradeTest = async (
-    courseId: string,
-    testId: string,
+  const handleGradeAssignment = async (
     studentId: string,
+    courseId: string,
+    assignmentId: string,
     grade: number
   ) => {
-    if (role !== "teacher" || !courseId || !testId || !studentId) return;
-    
-    if (grade < 0 || grade > 100 || isNaN(grade)) {
-      setError("Grade must be between 0 and 100.");
+    if (role !== "teacher" || !user) return;
+    const student = allStudents.find((s) => s.id === studentId);
+    if (!student || student.lecturerId !== user.uid) {
+      alert("You can only grade assignments for students assigned to you.");
       return;
     }
-    
     try {
-      const responseRef = doc(
-        db,
-        "courses",
-        courseId,
-        "tests",
-        testId,
-        "responses",
-        studentId
+      const gradeRef = doc(db, "students", studentId);
+      const updatedGrades = {
+        ...(student.grades || {}),
+        [`${courseId}_${assignmentId}`]: grade,
+      };
+      await updateDoc(gradeRef, { grades: updatedGrades });
+      setAllStudents((prev) =>
+        prev.map((s) =>
+          s.id === studentId ? { ...s, grades: updatedGrades } : s
+        )
       );
-      
-      await updateDoc(responseRef, { grade });
-      
-      setTestResponses((prev) =>
-        prev[testId] && prev[testId].studentId === studentId
-          ? { ...prev, [testId]: { ...prev[testId], grade } }
-          : prev
-      );
+      if (studentData && studentId === studentData.id) {
+        setStudentData((prev) =>
+          prev ? { ...prev, grades: updatedGrades } : prev
+        );
+      }
+      alert("Grade updated successfully!");
     } catch (err) {
-      console.error("Error grading test:", err);
-      setError(`Failed to grade test: ${err instanceof Error ? err.message : "Unknown error"}`);
+      console.error("Error grading assignment:", err);
+      alert(err instanceof Error ? err.message : "Failed to update grade.");
+    }
+  };
+
+  const handleGrantClearance = async (studentId: string) => {
+    if (!["admin", "accountsadmin"].includes(role)) return;
+    try {
+      await updateDoc(doc(db, "students", studentId), { clearance: true });
+      setAllStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, clearance: true } : s))
+      );
+      alert("Clearance granted!");
+    } catch (err) {
+      console.error("Error granting clearance:", err);
+      alert(err instanceof Error ? err.message : "Failed to grant clearance.");
+    }
+  };
+
+  const handleRemoveClearance = async (studentId: string) => {
+    if (!["admin", "accountsadmin"].includes(role)) return;
+    try {
+      await updateDoc(doc(db, "students", studentId), { clearance: false });
+      setAllStudents((prev) =>
+        prev.map((s) => (s.id === studentId ? { ...s, clearance: false } : s))
+      );
+      alert("Clearance removed!");
+    } catch (err) {
+      console.error("Error removing clearance:", err);
+      alert(err instanceof Error ? err.message : "Failed to remove clearance.");
+    }
+  };
+
+  const handleDeleteAccount = async (studentId: string) => {
+    if (role !== "admin") return;
+    try {
+      await deleteDoc(doc(db, "users", studentId));
+      await deleteDoc(doc(db, "students", studentId));
+      setAllStudents((prev) => prev.filter((s) => s.id !== studentId));
+      if (selectedStudentId === studentId) {
+        setSelectedStudentId(null);
+      }
+      alert("Account deleted successfully!");
+    } catch (err) {
+      console.error("Error deleting account:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete account.");
+    }
+  };
+
+  const handlePaymentSuccess = async (transaction: Transaction) => {
+    if (!user || !studentData) return;
+    try {
+      const newBalance = studentData.balance - transaction.amount;
+      const updatedTransactions = [...studentData.transactions, transaction];
+      await updateDoc(doc(db, "students", user.uid), {
+        balance: newBalance,
+        totalPaid: studentData.totalPaid + transaction.amount,
+        paymentStatus: newBalance <= 0 ? "Paid" : "Unpaid",
+        transactions: updatedTransactions,
+      });
+      setStudentData({
+        ...studentData,
+        balance: newBalance,
+        totalPaid: studentData.totalPaid + transaction.amount,
+        paymentStatus: newBalance <= 0 ? "Paid" : "Unpaid",
+        transactions: updatedTransactions,
+      });
+      alert("Payment processed successfully!");
+    } catch (err) {
+      console.error("Error processing payment:", err);
+      alert(err instanceof Error ? err.message : "Failed to process payment.");
     }
   };
 
   const handleMarkNotificationAsRead = async (notificationId: string) => {
     if (!user || role !== "student" || !studentData) return;
-    
     try {
       await markNotificationAsRead(user.uid, notificationId);
-      
-      setStudentData((prev) =>
-        prev
-          ? {
-              ...prev,
-              notifications: prev.notifications.map((n) =>
-                n.id === notificationId ? { ...n, read: true } : n
-              ),
-            }
-          : null
-      );
+      setStudentData({
+        ...studentData,
+        notifications: studentData.notifications.map((n) =>
+          n.id === notificationId ? { ...n, read: true } : n
+        ),
+      });
     } catch (err) {
       console.error("Error marking notification as read:", err);
-      setError(
-        `Failed to mark notification as read: ${err instanceof Error ? err.message : "Unknown error"}`
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to mark notification as read."
       );
     }
   };
 
+  const downloadFinancialReport = () => {
+    try {
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text("Financial Report", 20, 20);
+      const data = allStudents.map((s) => [
+        s.name || "N/A",
+        s.totalOwed.toLocaleString(),
+        s.totalPaid.toLocaleString(),
+        s.balance.toLocaleString(),
+        s.paymentStatus || "N/A",
+      ]);
+      autoTable(doc, {
+        head: [["Name", "Total Owed", "Total Paid", "Balance", "Status"]],
+        body: data,
+        startY: 30,
+        styles: { fontSize: 10 },
+        headStyles: { fillColor: [30, 64, 175] },
+      });
+      doc.save("Financial_Report.pdf");
+    } catch (err) {
+      console.error("Error generating financial report:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to generate financial report."
+      );
+    }
+  };
+
+  const filteredStudents = allStudents.filter((student) =>
+    student.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center">
-          <p className="text-red-800 text-xl">Loading dashboard...</p>
+        <p className="text-blue-800 text-xl">Loading...</p>
+      </div>
+    );
+  }
+
+  if (error || !userData) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="bg-red-100 border border-red-400 text-red-700 p-4 rounded">
+          <p>{error || "User data not found. Please log in again."}</p>
+          <Link
+            href="/auth/login"
+            className="mt-2 inline-block px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+          >
+            Login
+          </Link>
         </div>
       </div>
     );
   }
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="bg-red-100 border border-red-400 text-red-700 p-4 rounded max-w-md">
-          <p className="font-bold">Error</p>
-          <p>{error}</p>
-          <button
-            onClick={() => setError(null)}
-            className="mt-2 px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!userData || !role) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="bg-red-100 border border-red-400 text-red-700 p-4 rounded max-w-md">
-          <p>User data not found. Please try logging in again.</p>
-          <button
-            onClick={() => router.push("/auth/login")}
-            className="mt-2 px-3 py-1 bg-red-800 text-white rounded hover:bg-red-700"
-          >
-            Go to Login
-          </button>
-        </div>
-      </div>
-    );
+  if (!role) {
+    return null;
   }
 
   return (
-    <ErrorBoundary>
-      <div className="flex min-h-screen bg-gray-100">
-        {/* Sidebar */}
-        <div className="w-64 bg-white shadow-md p-4">
-          <h3 className="text-xl font-semibold text-red-800 mb-4">SMIS Menu</h3>
-          <ul className="space-y-2">
-            <li>
-              <Link
-                href="/dashboard"
-                className="block p-2 text-red-800 hover:bg-red-50 rounded"
-              >
-                Dashboard
-              </Link>
-            </li>
-            <li>
-              <Link
-                href="/profile"
-                className="block p-2 text-red-800 hover:bg-red-50 rounded"
-              >
-                Profile
-              </Link>
-            </li>
-            <li>
-              <button
-                onClick={() => auth.signOut()}
-                className="w-full text-left p-2 text-red-800 hover:bg-red-50 rounded"
-              >
-                Logout
-              </button>
-            </li>
-          </ul>
-        </div>
+    <div className="flex min-h-screen bg-gray-100">
+      {/* Sidebar */}
+      <div className="w-64 bg-white shadow-md p-4">
+        <h3 className="text-xl font-semibold text-blue-800 mb-4">SMIS Menu</h3>
+        <ul className="space-y-2">
+          <li>
+            <Link
+              href="/dashboard"
+              className="block p-2 text-blue-800 hover:bg-blue-50 rounded"
+            >
+              Dashboard
+            </Link>
+          </li>
+          <li>
+            <Link
+              href="/profile"
+              className="block p-2 text-blue-800 hover:bg-blue-50 rounded"
+            >
+              Profile
+            </Link>
+          </li>
+          <li>
+            <button
+              onClick={() => auth.signOut()}
+              className="block w-full text-left p-2 text-blue-800 hover:bg-blue-50 rounded"
+            >
+              Logout
+            </button>
+          </li>
+        </ul>
+      </div>
 
-        {/* Main Content */}
-        <div className="flex-1 p-6">
-          <div className="max-w-7xl mx-auto">
-            <h1 className="text-2xl font-bold text-red-800 mb-4">
-              {greeting}, {username}!
-            </h1>
+      {/* Main Content */}
+      <div className="flex-1 p-6">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center space-x-4">
+              <img
+                src={
+                  userData.profilePicture ||
+                  "https://as2.ftcdn.net/v2/jpg/05/89/93/27/1000_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg"
+                }
+                alt="Profile"
+                className="w-12 h-12 rounded-full object-cover"
+                onError={(e) =>
+                  (e.currentTarget.src =
+                    "https://as2.ftcdn.net/v2/jpg/05/89/93/27/1000_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg")
+                }
+              />
+              <div>
+                <h2 className="text-2xl font-bold text-blue-800">
+                  {greeting}, {username}
+                </h2>
+                <p className="text-blue-800 capitalize">{role} Dashboard</p>
+              </div>
+            </div>
+          </div>
 
-            {/* Student Dashboard */}
-            {role === "student" && studentData && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-red-800">Your Courses</h2>
-                {allCourses
-                  .filter((course) =>
-                    studentData.courses?.some((c) => c.id === course.id)
-                  )
-                  .map((course) => (
-                    <div
-                      key={course.id}
-                      className="p-4 bg-white rounded shadow"
-                    >
-                      <h3 className="text-lg font-medium text-red-800">
-                        {course.name}
-                      </h3>
-                      <p className="text-gray-600">{course.description}</p>
-                      
-                      {/* Resources Section */}
-                      <div className="mt-4">
-                        <h4 className="text-red-800 font-medium">Resources</h4>
-                        {course.resources?.length ? (
-                          <ul className="list-disc pl-5 space-y-1">
-                            {course.resources.map((resource) => (
-                              <li key={resource.id}>
-                                <a
-                                  href={resource.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:underline"
-                                >
-                                  {resource.name} ({resource.type})
-                                </a>
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-gray-600">No resources available.</p>
-                        )}
-                      </div>
-                      
-                      {/* Tests Section */}
-                      <div className="mt-4">
-                        <h4 className="text-red-800 font-medium">Tests</h4>
-                        {course.tests?.length ? (
-                          <ul className="space-y-4">
-                            {course.tests.map((test) => (
-                              <li key={test.id} className="p-3 bg-gray-50 rounded">
-                                <div className="flex justify-between items-start">
-                                  <div>
-                                    <p className="text-red-800 font-medium">
-                                      {test.title}
-                                    </p>
-                                    <p className="text-sm text-gray-600">
-                                      {test.questions.length} questions
-                                    </p>
-                                  </div>
-                                  {testResponses[test.id] ? (
-                                    <span
-                                      className={`px-2 py-1 rounded text-sm ${
-                                        testResponses[test.id].grade !== null
-                                          ? "bg-green-100 text-green-800"
-                                          : "bg-blue-100 text-blue-800"
-                                      }`}
-                                    >
-                                      {testResponses[test.id].grade !== null
-                                        ? `Grade: ${testResponses[test.id].grade}%`
-                                        : "Submitted"}
-                                    </span>
-                                  ) : null}
-                                </div>
-                                {!testResponses[test.id] ? (
-                                  <TestSubmissionForm
-                                    courseId={course.id}
-                                    test={test}
-                                    onSubmit={handleSubmitTestResponse}
-                                  />
-                                ) : (
-                                  <div className="mt-2 text-sm">
-                                    <p>
-                                      Submitted on:{" "}
-                                      {new Date(
-                                        testResponses[test.id].submittedAt ? new Date(testResponses[test.id].submittedAt as string) : new Date()
-                                      ).toLocaleString()}
-                                    </p>
-                                    {testResponses[test.id].grade !== null && (
-                                      <p>
-                                        Grade: {testResponses[test.id].grade}%
-                                      </p>
-                                    )}
-                                  </div>
-                                )}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-gray-600">No tests available.</p>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                
-                {/* Payment Section */}
-                {user && (
-                  <div className="p-4 bg-white rounded shadow">
-                    <h3 className="text-lg font-medium text-red-800 mb-2">
-                      Payment
+          {/* Student Dashboard */}
+          {role === "student" && (
+            <div className="space-y-6">
+              {!studentData ? (
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                  <p className="text-blue-800 text-center">
+                    No student profile found. Contact support to set up your
+                    account.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {/* Notifications */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Notifications
                     </h3>
-                    <CheckoutPage
-                      studentId={user.uid}
-                      onPaymentSuccess={async (amount: number) => {
-                        console.log(`Payment of ${amount} was successful.`);
-                        // Update student balance or payment status
-                      }}
-                    />
-                  </div>
-                )}
-                
-                {/* Notifications Section */}
-                {studentData.notifications?.length > 0 && (
-                  <div className="p-4 bg-white rounded shadow">
                     <NotificationList
                       notifications={studentData.notifications}
                       onMarkAsRead={handleMarkNotificationAsRead}
                     />
                   </div>
-                )}
-              </div>
-            )}
 
-            {/* Teacher Dashboard */}
-            {role === "teacher" && user && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-red-800">Your Courses</h2>
-                {allCourses
-                  .filter((course) => course.teacherId === user.uid)
-                  .map((course) => (
-                    <div
-                      key={course.id}
-                      className="p-4 bg-white rounded shadow"
-                    >
-                      <h3 className="text-lg font-medium text-red-800">
-                        {course.name}
-                      </h3>
-                      <p className="text-gray-600">{course.description}</p>
-                      
-                      {/* Add Resource Form */}
+                  {/* Payments */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Payments
+                    </h3>
+                    <p className="text-blue-800">
+                      Balance: {studentData.balance.toLocaleString()} JMD
+                    </p>
+                    <p className="text-blue-800">
+                      Status: {studentData.paymentStatus}
+                    </p>
+                    <p className="text-blue-800">
+                      Clearance: {studentData.clearance ? "Yes" : "No"}
+                    </p>
+                    {studentData.transactions.length > 0 && (
                       <div className="mt-4">
-                        <h4 className="text-red-800 font-medium">
-                          Add New Resource
+                        <h4 className="text-blue-800 font-medium">
+                          Transaction History
                         </h4>
-                        <ResourceForm
-                          courseId={course.id}
-                          onAddResource={handleAddResource}
-                        />
+                        {studentData.transactions.map((txn) => (
+                          <p key={txn.id} className="text-blue-800">
+                            {new Date(txn.date).toLocaleString()}:{" "}
+                            {txn.amount.toLocaleString()} JMD - {txn.status}
+                          </p>
+                        ))}
                       </div>
-                      
-                      {/* Add Test Form */}
+                    )}
+                    {studentData.balance > 0 ? (
                       <div className="mt-4">
-                        <h4 className="text-red-800 font-medium">Create New Test</h4>
-                        <TestForm
-                          courseId={course.id}
-                          onAddTest={handleAddTest}
+                        <CheckoutPage
+                          studentId={studentData.id}
+                          onPaymentSuccess={handlePaymentSuccess}
+                          amount={studentData.balance}
                         />
                       </div>
-                      
-                      {/* Existing Tests */}
-                      {course.tests?.length > 0 && (
-                        <div className="mt-6">
-                          <h4 className="text-red-800 font-medium">
-                            Grade Tests
-                          </h4>
-                          <div className="space-y-4">
-                            {course.tests.map((test) => (
-                              <div
-                                key={test.id}
-                                className="p-3 bg-gray-50 rounded"
-                              >
-                                <p className="text-red-800 font-medium">
-                                  {test.title}
-                                </p>
-                                <div className="mt-2 space-y-3">
-                                  {test.questions.map((q, i) => (
-                                    <p key={i} className="text-sm text-gray-600">
-                                      Q{i + 1}: {q.question}
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
+                    ) : (
+                      <p className="text-green-600 mt-2">
+                        No outstanding balance.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Grades */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Your Grades
+                    </h3>
+                    {studentData.grades &&
+                    Object.keys(studentData.grades).length > 0 ? (
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-blue-800 text-white">
+                            <th className="p-2 border">Assignment</th>
+                            <th className="p-2 border">Grade</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(studentData.grades).map(
+                            ([key, grade]) => (
+                              <tr key={key}>
+                                <td className="p-2 border text-blue-800">
+                                  {key}
+                                </td>
+                                <td className="p-2 border text-blue-800">
+                                  {grade}/100
+                                </td>
+                              </tr>
+                            )
+                          )}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="text-blue-800">No grades available.</p>
+                    )}
+                  </div>
+
+                  {/* Resources */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Course Resources
+                    </h3>
+                    <select
+                      value={selectedCourseId || ""}
+                      onChange={(e) => setSelectedCourseId(e.target.value)}
+                      className="w-full p-2 border rounded text-blue-800 mb-4"
+                    >
+                      <option value="">Select a Course</option>
+                      {studentData.courses.map((course) => (
+                        <option key={course.id} value={course.id}>
+                          {course.name}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedCourseId ? (
+                      (() => {
+                        const course = allCourses.find(
+                          (c) => c.id === selectedCourseId
+                        );
+                        return course && course.resources.length > 0 ? (
+                          <ul className="space-y-2">
+                            {course.resources.map((resource) => (
+                              <li key={resource.id} className="text-blue-800">
+                                <a
+                                  href={resource.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="hover:underline"
+                                >
+                                  {resource.name} ({resource.type})
+                                </a>{" "}
+                                - Uploaded:{" "}
+                                {new Date(
+                                  resource.uploadDate
+                                ).toLocaleString()}
+                              </li>
                             ))}
+                          </ul>
+                        ) : (
+                          <p className="text-blue-800">
+                            No resources available.
+                          </p>
+                        );
+                      })()
+                    ) : (
+                      <p className="text-blue-800">
+                        Please select a course to view resources.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Teacher Dashboard */}
+          {role === "teacher" && (
+            <div className="space-y-6">
+              {/* Course Selection */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Your Courses
+                </h3>
+                <select
+                  value={selectedCourseId || ""}
+                  onChange={(e) => setSelectedCourseId(e.target.value)}
+                  className="w-full p-2 border rounded text-blue-800"
+                >
+                  <option value="">Select a Course</option>
+                  {allCourses
+                    .filter((c) => user && c.teacherId === user.uid)
+                    .map((course) => (
+                      <option key={course.id} value={course.id}>
+                        {course.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {selectedCourseId && (
+                <>
+                  {/* Create Assignment */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Create Assignment
+                    </h3>
+                    <AssignmentForm
+                      courseId={selectedCourseId}
+                      onAddAssignment={(title, description, points) =>
+                        handleAddAssignment(selectedCourseId!, title, description, points)
+                      }
+                    />
+                  </div>
+
+                  {/* View and Grade Assignments */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Assignments
+                    </h3>
+                    {(() => {
+                      const course = allCourses.find(
+                        (c) => c.id === selectedCourseId
+                      );
+                      return course && course.assignments.length ? (
+                        <>
+                          {course.assignments.map((assignment) => (
+                            <div
+                              key={assignment.id}
+                              className="p-4 bg-gray-50 rounded mb-4"
+                            >
+                              <h4 className="text-md font-medium text-blue-800">
+                                {assignment.title}
+                              </h4>
+                              <p className="text-blue-800">
+                                {assignment.description || "No description"}
+                              </p>
+                              <p className="text-blue-800">
+                                Points: {assignment.points}
+                              </p>
+                              <div className="mt-2">
+                                <select
+                                  onChange={(e) => {
+                                    const studentId = e.target.value;
+                                    if (studentId) {
+                                      const grade = prompt(
+                                        "Enter grade (0-100)"
+                                      );
+                                      if (
+                                        grade &&
+                                        !isNaN(parseInt(grade)) &&
+                                        parseInt(grade) >= 0 &&
+                                        parseInt(grade) <= 100
+                                      ) {
+                                        handleGradeAssignment(
+                                          studentId,
+                                          selectedCourseId,
+                                          assignment.id,
+                                          parseInt(grade)
+                                        );
+                                      } else if (grade) {
+                                        alert(
+                                          "Please enter a valid grade (0-100)."
+                                        );
+                                      }
+                                    }
+                                  }}
+                                  className="p-2 border rounded text-blue-800"
+                                  defaultValue=""
+                                >
+                                  <option value="">Select a Student</option>
+                                  {allStudents
+                                    .filter(
+                                      (s) => user && s.lecturerId === user.uid
+                                    )
+                                    .map((s) => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.name}
+                                      </option>
+                                    ))}
+                                </select>
+                              </div>
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <p className="text-blue-800">No assignments available.</p>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Add Resource */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Add Resource
+                    </h3>
+                    <ResourceForm
+                      courseId={selectedCourseId}
+                      onAddResource={(name, type, url) =>
+                        handleAddResource(selectedCourseId!, name, type, url)
+                      }
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Admin Dashboard */}
+          {role === "admin" && (
+            <div className="space-y-6">
+              {/* Search Students */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Search Students
+                </h3>
+                <input
+                  type="text"
+                  placeholder="Search by student name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full p-2 border rounded text-blue-800"
+                />
+                {searchQuery && (
+                  <div className="mt-4 space-y-2">
+                    {filteredStudents.length > 0 ? (
+                      filteredStudents.map((student) => (
+                        <div
+                          key={student.id}
+                          className="flex items-center space-x-4 p-2 border-b"
+                        >
+                          <div>
+                            <p className="text-blue-800 font-medium">
+                              {student.name}
+                            </p>
+                            <p className="text-blue-800 text-sm">
+                              Email: {student.email}
+                            </p>
+                            <p className="text-blue-800 text-sm">
+                              Balance: {student.balance.toLocaleString()} JMD
+                            </p>
+                            <p className="text-blue-800 text-sm">
+                              Clearance: {student.clearance ? "Yes" : "No"}
+                            </p>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      ))
+                    ) : (
+                      <p className="text-blue-800">No students found.</p>
+                    )}
+                  </div>
+                )}
               </div>
-            )}
 
-            {/* Admin Dashboard */}
-            {role === "admin" && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-red-800">Admin Panel</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {allCourses.map((course) => (
-                    <div
-                      key={course.id}
-                      className="p-4 bg-white rounded shadow"
-                    >
-                      <h3 className="text-lg font-medium text-red-800">
-                        {course.name}
-                      </h3>
-                      <p className="text-gray-600 text-sm">
-                        {course.description}
-                      </p>
-                      <div className="mt-2 text-sm">
-                        <p>
-                          <span className="font-medium">Teacher ID:</span>{" "}
-                          {course.teacherId || "Not assigned"}
-                        </p>
-                        <p>
-                          <span className="font-medium">Resources:</span>{" "}
-                          {course.resources?.length || 0}
-                        </p>
-                        <p>
-                          <span className="font-medium">Tests:</span>{" "}
-                          {course.tests?.length || 0}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {/* Manage Students */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Manage Students
+                </h3>
+                {allStudents.length > 0 ? (
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-blue-800 text-white">
+                        <th className="p-2 border">Name</th>
+                        <th className="p-2 border">Email</th>
+                        <th className="p-2 border">Balance</th>
+                        <th className="p-2 border">Clearance</th>
+                        <th className="p-2 border">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allStudents.map((student) => (
+                        <tr key={student.id}>
+                          <td className="p-2 border text-blue-800">
+                            {student.name}
+                          </td>
+                          <td className="p-2 border text-blue-800">
+                            {student.email}
+                          </td>
+                          <td className="p-2 border text-blue-800">
+                            {student.balance.toLocaleString()} JMD
+                          </td>
+                          <td className="p-2 border">
+                            <button
+                              onClick={() =>
+                                student.clearance
+                                  ? handleRemoveClearance(student.id)
+                                  : handleGrantClearance(student.id)
+                              }
+                              className={`px-2 py-1 rounded text-white ${
+                                student.clearance
+                                  ? "bg-green-600 hover:bg-green-700"
+                                  : "bg-red-600 hover:bg-red-700"
+                              }`}
+                            >
+                              {student.clearance ? "Revoke" : "Grant"}
+                            </button>
+                          </td>
+                          <td className="p-2 border">
+                            <button
+                              onClick={() => handleDeleteAccount(student.id)}
+                              className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-blue-800">No students available.</p>
+                )}
               </div>
-            )}
-          </div>
+
+              {/* Payment History */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Payment History
+                </h3>
+                <select
+                  value={selectedStudentId || ""}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  className="w-full p-2 border rounded text-blue-800 mb-4"
+                >
+                  <option value="">Select a Student</option>
+                  {allStudents.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedStudentId && (
+                  (() => {
+                    const student = allStudents.find(
+                      (s) => s.id === selectedStudentId
+                    );
+                    return student && student.transactions.length > 0 ? (
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-blue-800 text-white">
+                            <th className="p-2 border">Date</th>
+                            <th className="p-2 border">Amount</th>
+                            <th className="p-2 border">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {student.transactions.map((txn) => (
+                            <tr key={txn.id}>
+                              <td className="p-2 border text-blue-800">
+                                {new Date(txn.date).toLocaleString()}
+                              </td>
+                              <td className="p-2 border text-blue-800">
+                                {txn.amount.toLocaleString()} JMD
+                              </td>
+                              <td className="p-2 border text-blue-800">
+                                {txn.status}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="text-blue-800">No transactions available.</p>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* Financial Report Download */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Financial Reports
+                </h3>
+                <button
+                  onClick={downloadFinancialReport}
+                  className="px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+                >
+                  Download Financial Report
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Accounts Admin Dashboard */}
+          {role === "accountsadmin" && (
+            <div className="space-y-6">
+              {/* Search Students */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Search Students
+                </h3>
+                <input
+                  type="text"
+                  placeholder="Search by student name..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full p-2 border rounded text-blue-800"
+                />
+                {searchQuery && (
+                  <div className="mt-4 space-y-2">
+                    {filteredStudents.length > 0 ? (
+                      filteredStudents.map((student) => (
+                        <div
+                          key={student.id}
+                          className="flex items-center space-x-4 p-2 border-b"
+                        >
+                          <div>
+                            <p className="text-blue-800 font-medium">
+                              {student.name}
+                            </p>
+                            <p className="text-blue-800 text-sm">
+                              Email: {student.email}
+                            </p>
+                            <p className="text-blue-800 text-sm">
+                              Balance: {student.balance.toLocaleString()} JMD
+                            </p>
+                            <p className="text-blue-800 text-sm">
+                              Clearance: {student.clearance ? "Yes" : "No"}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() =>
+                              student.clearance
+                                ? handleRemoveClearance(student.id)
+                                : handleGrantClearance(student.id)
+                            }
+                            className={`px-2 py-1 rounded text-white ${
+                              student.clearance
+                                ? "bg-green-600 hover:bg-green-700"
+                                : "bg-red-600 hover:bg-red-700"
+                            }`}
+                          >
+                            {student.clearance ? "Revoke" : "Grant"}
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-blue-800">No students found.</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Financial Report Download */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Financial Reports
+                </h3>
+                <button
+                  onClick={downloadFinancialReport}
+                  className="px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+                >
+                  Download Financial Report
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </ErrorBoundary>
+    </div>
   );
 }
