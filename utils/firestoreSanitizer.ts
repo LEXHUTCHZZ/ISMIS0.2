@@ -73,6 +73,7 @@ import {
       phoneNumber: data.phoneNumber ? safeString(data.phoneNumber) : undefined,
       homeAddress: data.homeAddress ? safeString(data.homeAddress) : undefined,
       profilePicture: data.profilePicture ? safeString(data.profilePicture) : undefined,
+      grades: safeObject<Record<string, number>>(data.grades, {}),
     };
   };
   
