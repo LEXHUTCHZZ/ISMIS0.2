@@ -18,19 +18,6 @@ import {
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../contexts/AuthContext";
-import {
-  StudentData,
-  Course,
-  Transaction,
-  Notification,
-  Resource,
-  Test,
-  TestResponse,
-  User,
-  Subject,
-} from "../../models";
-import CheckoutPage from "../../components/CheckoutPage";
-import { markNotificationAsRead } from "../../utils/utils";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
@@ -65,114 +52,69 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-// Reusable Components
-const NotificationList = ({
-  notifications,
-  onMarkAsRead,
-}: {
-  notifications: Notification[];
-  onMarkAsRead: (notificationId: string) => void;
-}) => (
-  <div className="mt-4">
-    <h3 className="text-lg font-semibold text-red-800">Notifications</h3>
-    {notifications.length === 0 ? (
-      <p className="text-gray-600">No notifications</p>
-    ) : (
-      <ul className="space-y-2">
-        {notifications.map((notification) => (
-          <li key={notification.id} className="p-2 bg-white rounded shadow">
-            <p className="text-red-800">{notification.message}</p>
-            <p className="text-sm text-gray-500">{new Date(notification.date).toLocaleString()}</p>
-            {!notification.read && (
-              <button
-                onClick={() => onMarkAsRead(notification.id)}
-                className="text-blue-600 hover:underline text-sm"
-              >
-                Mark as Read
-              </button>
-            )}
-          </li>
-        ))}
-      </ul>
-    )}
-  </div>
-);
-
-const ResourceForm = ({
-  courseId,
-  onAddResource,
-}: {
-  courseId: string;
-  onAddResource: (courseId: string, name: string, url: string, type: string) => void;
-}) => {
-  const [name, setName] = useState("");
-  const [url, setUrl] = useState("");
-  const [type, setType] = useState("Video");
-  const [isUploading, setIsUploading] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!name.trim()) {
-      alert("Please enter a resource name");
-      return;
-    }
-    if (!url.trim() || !url.match(/^https?:\/\//)) {
-      alert("Please enter a valid URL starting with http:// or https://");
-      return;
-    }
-
-    setIsUploading(true);
-    try {
-      await onAddResource(courseId, name, url, type);
-      setName("");
-      setUrl("");
-      setType("Video");
-    } catch (err) {
-      console.error("Error adding resource:", err);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
-  return (
-    <div className="mt-4">
-      <input
-        type="text"
-        placeholder="Resource Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        className="p-2 border rounded text-red-800 w-full mb-2"
-        required
-      />
-      <input
-        type="url"
-        placeholder="Resource URL (must start with http:// or https://)"
-        value={url}
-        onChange={(e) => setUrl(e.target.value)}
-        className="p-2 border rounded text-red-800 w-full mb-2"
-        required
-      />
-      <select
-        value={type}
-        onChange={(e) => setType(e.target.value)}
-        className="p-2 border rounded text-red-800 w-full mb-2"
-      >
-        <option value="Video">Video</option>
-        <option value="Document">Document</option>
-        <option value="Link">Link</option>
-      </select>
-      <button
-        onClick={handleSubmit}
-        disabled={isUploading}
-        className="px-4 py-2 bg-red-800 text-white rounded-md hover:bg-red-700 w-full disabled:bg-gray-400"
-      >
-        {isUploading ? "Uploading..." : "Add Resource"}
-      </button>
-    </div>
-  );
-};
-
 // Main Dashboard Component
 type Role = "student" | "teacher" | "admin" | "accountsadmin";
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: Role;
+}
+
+interface StudentData {
+  id: string;
+  name: string;
+  email: string;
+  courses?: Course[];
+  balance?: number;
+  totalPaid?: number;
+  totalOwed?: number;
+  paymentStatus?: string;
+  transactions?: Transaction[];
+  notifications?: Notification[];
+  clearance?: boolean;
+}
+
+interface Course {
+  id: string;
+  name: string;
+  subjects?: Subject[];
+}
+
+interface Subject {
+  name: string;
+  grades?: {
+    C1?: string;
+    C2?: string;
+    exam?: string;
+    final?: string;
+  };
+}
+
+interface Transaction {
+  id: string;
+  amount: number;
+  date: string;
+  status: string;
+}
+
+interface Notification {
+  id: string;
+  message: string;
+  date: string;
+  read: boolean;
+  type: string;
+}
+
+interface Resource {
+  id: string;
+  name: string;
+  url: string;
+  type: string;
+  uploadDate: string;
+  courseId: string;
+}
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
@@ -423,7 +365,7 @@ export default function Dashboard() {
               // Calculate final grade (40% classwork, 60% exam)
               const classworkKeys = Object.keys(updatedGrades).filter(k => k.startsWith("C"));
               const classworkValues = classworkKeys
-                .map(k => parseFloat(updatedGrades[k] || "0"))
+                .map(k => parseFloat(updatedGrades[k as keyof typeof updatedGrades] || "0"))
                 .filter(v => !isNaN(v));
               const exam = parseFloat(updatedGrades.exam || "0");
               
@@ -525,6 +467,30 @@ export default function Dashboard() {
     }
   };
 
+  const markNotificationAsRead = async (studentId: string, notificationId: string) => {
+    try {
+      const studentRef = doc(db, "students", studentId);
+      const studentSnap = await getDoc(studentRef);
+      if (!studentSnap.exists()) return;
+
+      const studentData = studentSnap.data() as StudentData;
+      const updatedNotifications = studentData.notifications?.map(notification => 
+        notification.id === notificationId ? { ...notification, read: true } : notification
+      );
+
+      await updateDoc(studentRef, { notifications: updatedNotifications });
+      
+      if (studentData.id === studentId) {
+        setStudentData({
+          ...studentData,
+          notifications: updatedNotifications || []
+        });
+      }
+    } catch (err) {
+      console.error("Error marking notification as read:", err);
+    }
+  };
+
   if (isLoading) {
     return <p className="text-red-800 text-center">Loading...</p>;
   }
@@ -584,11 +550,23 @@ export default function Dashboard() {
                       <p className="text-lg font-bold">${(studentData.balance || 0).toFixed(2)}</p>
                     </div>
                   </div>
-                  {studentData.balance > 0 && (
-                    <CheckoutPage 
-                      studentId={user?.uid || ""} 
-                      onPaymentSuccess={handlePaymentSuccess} 
-                    />
+                  {(studentData.balance ?? 0) > 0 && (
+                    <div className="mt-4">
+                      <h3 className="text-lg font-semibold text-red-800 mb-2">Make Payment</h3>
+                      <div className="flex items-center gap-4">
+                        <input
+                          type="number"
+                          placeholder="Enter amount"
+                          className="p-2 border rounded text-red-800 w-40"
+                        />
+                        <button
+                          onClick={() => handlePaymentSuccess(parseFloat((studentData.balance || 0).toFixed(2)))}
+                          className="px-4 py-2 bg-red-800 text-white rounded hover:bg-red-700"
+                        >
+                          Pay Now
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
 
@@ -675,10 +653,24 @@ export default function Dashboard() {
                 <div className="bg-white p-6 rounded-lg shadow">
                   <h2 className="text-xl font-semibold text-red-800 mb-4">Notifications</h2>
                   {studentData.notifications?.length ? (
-                    <NotificationList
-                      notifications={studentData.notifications}
-                      onMarkAsRead={(id) => markNotificationAsRead(user?.uid || "", id)}
-                    />
+                    <div className="mt-4">
+                      {studentData.notifications.map((notification) => (
+                        <div key={notification.id} className="p-2 bg-white rounded shadow mb-2">
+                          <p className="text-red-800">{notification.message}</p>
+                          <p className="text-sm text-gray-500">
+                            {new Date(notification.date).toLocaleString()}
+                          </p>
+                          {!notification.read && (
+                            <button
+                              onClick={() => markNotificationAsRead(studentData.id, notification.id)}
+                              className="text-blue-600 hover:underline text-sm"
+                            >
+                              Mark as Read
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <p className="text-gray-600">No notifications</p>
                   )}
@@ -722,10 +714,33 @@ export default function Dashboard() {
                               
                               {/* Add Resource Form */}
                               <div className="mt-2">
-                                <ResourceForm 
-                                  courseId={course.id} 
-                                  onAddResource={handleAddResource} 
+                                <h5 className="text-sm font-medium text-red-800 mb-1">Add Resource</h5>
+                                <input
+                                  type="text"
+                                  placeholder="Resource Name"
+                                  className="p-2 border rounded text-red-800 w-full mb-2"
                                 />
+                                <input
+                                  type="url"
+                                  placeholder="Resource URL"
+                                  className="p-2 border rounded text-red-800 w-full mb-2"
+                                />
+                                <select className="p-2 border rounded text-red-800 w-full mb-2">
+                                  <option value="Video">Video</option>
+                                  <option value="Document">Document</option>
+                                  <option value="Link">Link</option>
+                                </select>
+                                <button
+                                  onClick={() => handleAddResource(
+                                    course.id,
+                                    "Sample Resource",
+                                    "https://example.com",
+                                    "Document"
+                                  )}
+                                  className="px-4 py-2 bg-red-800 text-white rounded hover:bg-red-700 w-full"
+                                >
+                                  Add Resource
+                                </button>
                               </div>
 
                               {/* Grade Input Section */}
@@ -906,6 +921,61 @@ export default function Dashboard() {
                             );
                           })
                         )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ACCOUNTS ADMIN DASHBOARD */}
+            {role === "accountsadmin" && (
+              <div className="space-y-6">
+                <div className="bg-white p-6 rounded-lg shadow">
+                  <h2 className="text-xl font-semibold text-red-800 mb-4">Financial Overview</h2>
+                  
+                  <input
+                    type="text"
+                    placeholder="Search students by name or ID..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="p-2 border rounded text-red-800 w-full mb-4"
+                  />
+                  
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full bg-white">
+                      <thead>
+                        <tr className="bg-red-800 text-white">
+                          <th className="py-2 px-4">Student ID</th>
+                          <th className="py-2 px-4">Name</th>
+                          <th className="py-2 px-4">Balance</th>
+                          <th className="py-2 px-4">Last Payment</th>
+                          <th className="py-2 px-4">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allStudents
+                          .filter(student => 
+                            student.name?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                            student.id?.toLowerCase().includes(searchTerm.toLowerCase())
+                          )
+                          .map((student) => (
+                            <tr key={student.id} className="border-b">
+                              <td className="py-2 px-4">{student.id}</td>
+                              <td className="py-2 px-4">{student.name}</td>
+                              <td className="py-2 px-4">
+                                ${(student.balance || 0).toFixed(2)}
+                              </td>
+                              <td className="py-2 px-4">
+                                {student.transactions?.length
+                                  ? new Date(student.transactions[student.transactions.length - 1].date).toLocaleDateString()
+                                  : "None"}
+                              </td>
+                              <td className="py-2 px-4">
+                                {student.paymentStatus || "Unknown"}
+                              </td>
+                            </tr>
+                          ))}
                       </tbody>
                     </table>
                   </div>
