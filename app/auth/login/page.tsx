@@ -54,6 +54,7 @@ export default function Login() {
         setError("Username or role does not match registered data");
         return;
       }
+      console.log("User data:", userData); // Debugging line to check user data
 
       router.push("/dashboard"); // Fixed: Use router.push instead of window.location.href
     } catch (err: any) {
