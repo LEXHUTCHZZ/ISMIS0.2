@@ -1076,29 +1076,50 @@ export default function Dashboard() {
           {/* Teacher Dashboard */}
           {role === "teacher" && (
             <div className="space-y-6">
-              {/* Course Selection */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Your Courses
-                </h3>
-                <select
-                  value={selectedCourseId || ""}
-                  onChange={(e) => setSelectedCourseId(e.target.value)}
-                  className="w-full p-2 border rounded text-blue-800"
-                >
-                  <option value="">Select a Course</option>
-                  {allCourses
-                    .filter((c) => user && c.teacherId === user.uid)
-                    .map((course) => (
-                      <option key={course.id} value={course.id}>
-                        {course.name}
-                      </option>
-                    ))}
-                </select>
+              {/* Course Selection and Quick Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div className="md:col-span-2 bg-white p-6 rounded-lg shadow-md">
+                  <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                    Your Courses
+                  </h3>
+                  <select
+                    value={selectedCourseId || ""}
+                    onChange={(e) => setSelectedCourseId(e.target.value)}
+                    className="w-full p-2 border rounded text-blue-800"
+                  >
+                    <option value="">Select a Course</option>
+                    {allCourses
+                      .filter((c) => user && c.teacherId === user.uid)
+                      .map((course) => (
+                        <option key={course.id} value={course.id}>
+                          {course.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                
+                {/* Quick Stats */}
+                <div className="bg-blue-50 p-6 rounded-lg shadow-md">
+                  <h3 className="text-sm font-semibold text-blue-800 mb-2">Total Students</h3>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {allStudents.filter(s => user && s.lecturerId === user.uid).length}
+                  </p>
+                </div>
+                <div className="bg-green-50 p-6 rounded-lg shadow-md">
+                  <h3 className="text-sm font-semibold text-green-800 mb-2">Active Assignments</h3>
+                  <p className="text-2xl font-bold text-green-600">
+                    {selectedCourseId ? 
+                      allCourses.find(c => c.id === selectedCourseId)?.assignments.length || 0
+                      : 0
+                    }
+                  </p>
+                </div>
               </div>
 
               {selectedCourseId && (
-                <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Left Column */}
+                  <div className="space-y-6">
                   {/* Create Assignment */}
                   <div className="bg-white p-6 rounded-lg shadow-md">
                     <h3 className="text-lg font-semibold text-blue-800 mb-4">
@@ -1198,7 +1219,103 @@ export default function Dashboard() {
                       onAddResource={handleAddResource}
                     />
                   </div>
-                </>
+                  </div>
+
+                  {/* Right Column */}
+                  <div className="space-y-6">
+                    {/* Student Progress */}
+                    <div className="bg-white p-6 rounded-lg shadow-md">
+                      <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                        Student Progress
+                      </h3>
+                      <div className="space-y-4">
+                        {allStudents
+                          .filter(s => user && s.lecturerId === user.uid)
+                          .map(student => (
+                            <div key={student.id} className="p-4 bg-gray-50 rounded">
+                              <h4 className="font-medium text-blue-800">{student.name}</h4>
+                              <div className="mt-2 text-sm text-gray-600">
+                                <p>Assignments Completed: {student.grades ? Object.keys(student.grades).length : 0}</p>
+                                <p>Average Grade: {
+                                  student.grades ?
+                                    Object.values(student.grades).length > 0 ?
+                                      (Object.values(student.grades).reduce((a, b) => a + b, 0) / Object.values(student.grades).length).toFixed(1)
+                                      : 'N/A'
+                                    : 'N/A'
+                                }</p>
+                              </div>
+                            </div>
+                          ))
+                        }
+                      </div>
+                    </div>
+
+                    {/* Course Announcements */}
+                    <div className="bg-white p-6 rounded-lg shadow-md">
+                      <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                        Course Announcements
+                      </h3>
+                      <div className="space-y-4">
+                        <textarea
+                          className="w-full p-2 border rounded text-blue-800 mb-2"
+                          placeholder="Write an announcement..."
+                          rows={3}
+                        />
+                        <button
+                          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                          onClick={() => {
+                            // TODO: Implement announcement functionality
+                            alert('Announcement feature coming soon!');
+                          }}
+                        >
+                          Post Announcement
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* View Resources */}
+                    <div className="bg-white p-6 rounded-lg shadow-md">
+                      <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                        Course Resources
+                      </h3>
+                      {(() => {
+                        const course = allCourses.find(c => c.id === selectedCourseId);
+                        return course && course.resources && course.resources.length ? (
+                          <div className="space-y-4">
+                            {course.resources.map((resource, index) => (
+                              <div key={index} className="p-4 bg-gray-50 rounded">
+                                <h4 className="font-medium text-blue-800">{resource.title}</h4>
+                                <p className="text-sm text-gray-600">{resource.description}</p>
+                                <div className="mt-2 flex items-center space-x-2">
+                                  <a
+                                    href={resource.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800"
+                                  >
+                                    View Resource
+                                  </a>
+                                  <span className="text-gray-400">|</span>
+                                  <button
+                                    className="text-red-600 hover:text-red-800"
+                                    onClick={() => {
+                                      // TODO: Implement delete functionality
+                                      alert('Delete feature coming soon!');
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-blue-800">No resources available.</p>
+                        );
+                      })()}
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}
