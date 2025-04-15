@@ -17,7 +17,6 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher" | "admin" | "accountsadmin">("student");
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -41,19 +40,13 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     // Validate all required fields
-    if (!email || !password || !confirmPassword || !username || !role) {
+    if (!email || !password || !username || !role) {
       setError('All fields are required');
       return;
     }
 
-    // Check if passwords match
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
     try {
-      const { user } = await signInWithEmailAndPassword(auth, email, password); // Fixed: Use modular Firebase SDK
+      const { user } = await signInWithEmailAndPassword(auth, email, password);
       const userDoc = await getDoc(doc(db, "users", user.uid));
       const userData = userDoc.data() as UserData | undefined;
 
@@ -61,9 +54,9 @@ export default function Login() {
         setError("Username or role does not match registered data");
         return;
       }
-      console.log("User data:", userData); // Debugging line to check user data
 
-      router.push("/dashboard"); // Fixed: Use router.push instead of window.location.href
+      // Use replace instead of push to prevent going back to login
+      router.replace("/dashboard");
     } catch (err: any) {
       setError(err.message || "Login failed");
     }
@@ -115,13 +108,6 @@ export default function Login() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
-          />
-          <input
-            type="password"
-            placeholder="Confirm Password"
-            value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
             className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
           />
           <div>
