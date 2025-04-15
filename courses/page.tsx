@@ -374,6 +374,7 @@ export default function CoursePage() {
         coursework: [],
         subjects: [],
         resources: [],
+        assignments: [],
         tests: [],
       };
       await setDoc(courseRef, newCourse);
