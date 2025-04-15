@@ -276,7 +276,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading } = useAuth();
 
   const fetchData = useCallback(async (currentUser: any) => {
     setIsLoading(true);
@@ -285,7 +285,16 @@ export default function Dashboard() {
       const userDocRef = doc(db, "users", currentUser.uid);
       const userSnap = await getDoc(userDocRef);
       if (!userSnap.exists()) {
-        throw new Error("User data not found.");
+        // Create a new user document if it doesn't exist
+        const newUser = {
+          id: currentUser.uid,
+          name: currentUser.displayName || "Unnamed",
+          email: currentUser.email || "",
+          role: "student", // Default role
+          profilePicture: currentUser.photoURL || ""
+        };
+        await setDoc(userDocRef, newUser);
+        return newUser;
       }
       const fetchedUserData = { id: userSnap.id, ...userSnap.data() } as User;
 
@@ -404,20 +413,19 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    if (loading) {
+      setIsLoading(true);
+      return;
+    }
+
     if (!user) {
       router.push("/auth/login");
       return;
     }
 
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      if (!currentUser) {
-        router.push("/auth/login");
-        return;
-      }
-      fetchData(currentUser);
-    });
+    fetchData(user);
 
-    return () => unsubscribe();
+    return () => {};
   }, [user, router, fetchData]);
 
   const handleAddResource = async (
