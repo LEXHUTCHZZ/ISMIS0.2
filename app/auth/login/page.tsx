@@ -17,6 +17,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [role, setRole] = useState<"student" | "teacher" | "admin" | "accountsadmin">("student");
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -25,6 +26,16 @@ export default function Login() {
 
   // Show the login form and remove the video after exactly 60 seconds
   useEffect(() => {
+    // Load remembered credentials if they exist
+    const rememberedEmail = localStorage.getItem('rememberedEmail');
+    const rememberedUsername = localStorage.getItem('rememberedUsername');
+    
+    if (rememberedEmail && rememberedUsername) {
+      setEmail(rememberedEmail);
+      setUsername(rememberedUsername);
+      setRememberMe(true);
+    }
+
     const timeout = setTimeout(() => {
       setShowVideo(false);
       setShowForm(true);
@@ -57,7 +68,17 @@ export default function Login() {
       }
       console.log("User data:", userData); // Debugging line
 
-      router.push("/dashboard");
+      // Save credentials if remember me is checked
+      if (rememberMe) {
+        localStorage.setItem('rememberedEmail', email);
+        localStorage.setItem('rememberedUsername', username);
+      } else {
+        localStorage.removeItem('rememberedEmail');
+        localStorage.removeItem('rememberedUsername');
+      }
+
+      // Use replace to prevent going back to login
+      router.replace("/dashboard");
     } catch (err: any) {
       setError(err.message || "Login failed");
     }
@@ -114,6 +135,15 @@ export default function Login() {
             className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
             required
           />
+          <label className="flex items-center space-x-2 text-white cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="form-checkbox h-4 w-4 text-red-800 rounded focus:ring-red-800"
+            />
+            <span>Remember me</span>
+          </label>
           <div>
             <p className="text-white font-semibold mb-2">Select Role:</p>
             {["student", "teacher", "admin", "accountsadmin"].map((r) => (

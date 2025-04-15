@@ -14,6 +14,7 @@ export default function Register() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher" | "admin" | "accountsadmin">("student");
   const [error, setError] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -42,8 +43,15 @@ export default function Register() {
         role,
       });
 
+      // Save user credentials if remember me is checked
+      if (rememberMe) {
+        localStorage.setItem('rememberedEmail', email);
+        localStorage.setItem('rememberedUsername', username);
+      }
+
       alert("Registration Successful");
-      router.push("/dashboard");
+      // Use replace to prevent going back to register page
+      router.replace("/dashboard");
     } catch (err: any) {
       setError(err.message || "Registration failed");
     }
@@ -102,6 +110,15 @@ export default function Register() {
               </label>
             ))}
           </div>
+          <label className="flex items-center space-x-2 text-white cursor-pointer">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(e) => setRememberMe(e.target.checked)}
+              className="form-checkbox h-4 w-4 text-red-800 rounded focus:ring-red-800"
+            />
+            <span>Remember me</span>
+          </label>
           <button
             type="submit"
             className="w-full bg-red-800 text-white p-3 rounded-lg hover:bg-red-700 transition-colors font-semibold"
