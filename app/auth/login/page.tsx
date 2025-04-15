@@ -28,7 +28,7 @@ export default function Login() {
     const timeout = setTimeout(() => {
       setShowVideo(false);
       setShowForm(true);
-    }, 60000); // Updated to 60 seconds
+    }, 60000); // 60 seconds
 
     return () => clearTimeout(timeout);
   }, []);
@@ -39,9 +39,10 @@ export default function Login() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    // Validate all required fields
+    e.preventDefault();
+    // Validate required fields
     if (!email || !password || !username || !role) {
-      setError('All fields are required');
+      setError("All fields are required");
       return;
     }
 
@@ -54,9 +55,9 @@ export default function Login() {
         setError("Username or role does not match registered data");
         return;
       }
+      console.log("User data:", userData); // Debugging line
 
-      // Use replace instead of push to prevent going back to login
-      router.replace("/dashboard");
+      router.push("/dashboard");
     } catch (err: any) {
       setError(err.message || "Login failed");
     }
@@ -95,6 +96,7 @@ export default function Login() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
+            required
           />
           <input
             type="text"
@@ -102,6 +104,7 @@ export default function Login() {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
+            required
           />
           <input
             type="password"
@@ -109,6 +112,7 @@ export default function Login() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
+            required
           />
           <div>
             <p className="text-white font-semibold mb-2">Select Role:</p>
@@ -120,6 +124,7 @@ export default function Login() {
                   value={r}
                   checked={role === r}
                   onChange={() => setRole(r as "student" | "teacher" | "admin" | "accountsadmin")}
+                  required
                 />
                 <span>{r.charAt(0).toUpperCase() + r.slice(1)}</span>
               </label>
