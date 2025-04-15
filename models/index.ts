@@ -37,84 +37,48 @@ export interface StudentData {
   id: string;
   name: string;
   email: string;
-  active?: boolean; // Added the 'active' property
+  active?: boolean;
   courses: Course[];
   notifications: Notification[];
-  lecturerId: string | null;// Consolidated type
+  lecturerId: string | null;
   totalOwed: number;
   totalPaid: number;
   balance: number;
-  enrollmentDate?: string; // Made optional to avoid conflicts
-  status?: string; // Made optional to avoid conflicts
+  enrollmentDate?: string;
+  status?: string;
   testResponses?: { [testId: string]: TestResponse };
-  lastOnline?: string; // Added lastOnline property
-  paymentStatus?: string;
-  clearance?: boolean;
-  transactions?: { id: string; amount: number; date: string; status: string }[];
+  lastOnline?: string;
+  paymentStatus: string;
+  clearance: boolean;
+  transactions: Transaction[];
+  grades: Record<string, number>;
   idNumber?: string;
   phoneNumber?: string;
   homeAddress?: string;
   profilePicture?: string;
 }
-export interface Course {
-  id: string;
-  name: string;
-  fee: number;
-  subjects: Subject[];
-  resources: Resource[];
-  tests: Test[];
-  coursework: Coursework[]; // Add this line
 
-}
-
-export interface StudentData {
+export interface Assignment {
   id: string;
-  name: string;
-  email: string;
-  lecturerId: string | null;
-  courses: Course[];
-  totalOwed: number;
-  totalPaid: number;
-  balance: number;
-  
-  notifications: Notification[];
-  grades: Record<string, number>;
+  courseId: string;
+  title: string;
+  description: string;
+  points: number;
+  createdAt: string;
 }
 
 export interface Course {
   id: string;
   name: string;
-  fee: number;
- 
-  tests: Test[];
-}
-
-
-
-
-
-export interface Course {
-  id: string;
-  name: string;
- 
-  assignments?:[];
-  announcements?: []; // Added announcements property
-
-}
-
-export interface Course {
-  id: string;
-  name: string;
-
-  teacherId?: string; // Add teacherId property
-}
-
-
-export interface Course {
-  id: string;
-  name: string;
-  description?: string; // Added description property
-  
+  fee?: number;
+  subjects?: Subject[];
+  resources?: Resource[];
+  tests?: Test[];
+  coursework?: Coursework[];
+  teacherId?: string;
+  description?: string;
+  assignments: Assignment[];
+  announcements?: any[];
 }
 
 export interface Resource {

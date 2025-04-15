@@ -87,6 +87,10 @@ import {
       subjects: safeArray<Subject>(data.subjects, []).map(sanitizeSubject),
       resources: safeArray<Resource>(data.resources, []).map(sanitizeResource),
       tests: safeArray<Test>(data.tests, []).map(sanitizeTest),
+      teacherId: data.teacherId ? safeString(data.teacherId) : undefined,
+      description: data.description ? safeString(data.description) : undefined,
+      assignments: safeArray(data.assignments, []),
+      announcements: safeArray(data.announcements, [])
     };
   };
   
