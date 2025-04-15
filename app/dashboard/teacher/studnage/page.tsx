@@ -65,7 +65,7 @@ export default function StudentManagement() {
         if (s.id === studentId) {
           const updatedCourses = s.courses.map((c: Course) => {
             if (c.name === courseName) {
-              const updatedSubjects = c.subjects.map((sub: Subject) => {
+              const updatedSubjects = (c.subjects || []).map((sub: Subject) => {
                 if (sub.name === subjectName) {
                   const updatedGrades = { ...sub.grades, [field]: value };
                   const classworkKeys = Object.keys(updatedGrades).filter((k) => k.startsWith("C"));
@@ -108,7 +108,7 @@ export default function StudentManagement() {
 
     const updatedCourses = studentToUpdate.courses.map((c: Course) => {
       if (c.name === courseName) {
-        return { ...c, subjects: [...c.subjects, { name: subjectName, grades: {} }] };
+        return { ...c, subjects: [...(c.subjects || []), { name: subjectName, grades: {} }] };
       }
       return c;
     });
