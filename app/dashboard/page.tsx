@@ -1,17 +1,24 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { auth, db } from "../../lib/firebase";
-import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "@/lib/firebase";
+import {
+  onAuthStateChanged,
+  signOut,
+} from "firebase/auth";
 import {
   doc,
   getDoc,
-  updateDoc,
-  collection,
   getDocs,
-  setDoc,
+  collection,
+  query,
+  where,
+  updateDoc,
+  addDoc,
   deleteDoc,
+  setDoc,
 } from "firebase/firestore";
+import { v4 as uuidv4 } from 'uuid';
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../contexts/AuthContext";
@@ -20,7 +27,7 @@ import autoTable from "jspdf-autotable";
 import CheckoutPage from "../../components/CheckoutPage";
 import { markNotificationAsRead } from "../../utils/utils";
 
-// Interfaces (unchanged)
+// Interfaces
 interface User {
   id: string;
   name: string;
@@ -70,10 +77,27 @@ interface Notification {
 
 interface Resource {
   id: string;
-  name: string;
-  type: string;
+  title: string;
+  type: 'video' | 'pdf' | 'link';
   url: string;
-  uploadDate: string;
+  description: string;
+  uploadedBy: string;
+  uploadedAt: Date;
+  courseCode?: string;
+}
+
+interface Grade {
+  id: string;
+  studentId: string;
+  courseCode: string;
+  courseName: string;
+  mark: number;
+  grade: string;
+  credits: number;
+  quality: number;
+  comments?: string;
+  semester: string;
+  updatedAt: Date;
 }
 
 interface Assignment {
@@ -85,22 +109,23 @@ interface Assignment {
   createdAt: string;
 }
 
-// Resource Form Component (unchanged)
+// Resource Form Component
 const ResourceForm = ({
   courseId,
   onAddResource,
 }: {
   courseId: string;
-  onAddResource: (name: string, type: string, url: string) => void;
+  onAddResource: (title: string, type: 'video' | 'pdf' | 'link', url: string, description: string) => void;
 }) => {
-  const [name, setName] = useState("");
-  const [type, setType] = useState("");
+  const [title, setTitle] = useState("");
+  const [type, setType] = useState<"video" | "pdf" | "link" | "">("");
   const [url, setUrl] = useState("");
+  const [description, setDescription] = useState("");
   const [error, setError] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !type.trim() || !url.trim()) {
+    if (!title.trim() || !type || !url.trim() || !description.trim()) {
       setError("All fields are required.");
       return;
     }
@@ -108,10 +133,11 @@ const ResourceForm = ({
       setError("Please enter a valid URL.");
       return;
     }
-    onAddResource(name, type, url);
-    setName("");
+    onAddResource(title, type, url, description);
+    setTitle("");
     setType("");
     setUrl("");
+    setDescription("");
     setError("");
   };
 
@@ -119,20 +145,20 @@ const ResourceForm = ({
     <form onSubmit={handleSubmit} className="space-y-4">
       <input
         type="text"
-        placeholder="Resource Name"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
+        placeholder="Resource Title"
+        value={title}
+        onChange={(e) => setTitle(e.target.value)}
         className="w-full p-2 border rounded text-blue-800"
       />
       <select
         value={type}
-        onChange={(e) => setType(e.target.value)}
+        onChange={(e) => setType(e.target.value as "video" | "pdf" | "link" | "")}
         className="w-full p-2 border rounded text-blue-800"
       >
         <option value="">Select Type</option>
-        <option value="YouTube Video">YouTube Video</option>
-        <option value="PDF">PDF</option>
-        <option value="Other">Other</option>
+        <option value="video">Video</option>
+        <option value="pdf">PDF</option>
+        <option value="link">Link</option>
       </select>
       <input
         type="url"
@@ -140,6 +166,12 @@ const ResourceForm = ({
         value={url}
         onChange={(e) => setUrl(e.target.value)}
         className="w-full p-2 border rounded text-blue-800"
+      />
+      <textarea
+        placeholder="Description"
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        className="w-full p-2 border rounded text-blue-800 min-h-[80px]"
       />
       {error && <p className="text-red-600 text-sm">{error}</p>}
       <button
@@ -152,7 +184,7 @@ const ResourceForm = ({
   );
 };
 
-// Assignment Form Component (unchanged)
+// Assignment Form Component
 const AssignmentForm = ({
   courseId,
   onAddAssignment,
@@ -217,7 +249,7 @@ const AssignmentForm = ({
   );
 };
 
-// Notification List Component (unchanged)
+// Notification List Component
 const NotificationList = ({
   notifications,
   onMarkAsRead,
@@ -265,16 +297,18 @@ export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [allLecturers, setAllLecturers] = useState<User[]>([]);
-  const [role, setRole] = useState<string>("");
+  type Role = "admin" | "student" | "lecturer" | "teacher" | "accountsadmin" | "";
+  const [role, setRole] = useState<Role>("");
   const [username, setUsername] = useState("");
   const [greeting, setGreeting] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const { user } = useAuth();
 
@@ -282,12 +316,11 @@ export default function Dashboard() {
     const userDocRef = doc(db, "users", currentUser.uid);
     const userSnap = await getDoc(userDocRef);
     if (!userSnap.exists()) {
-      // Create a default user document
       const defaultUser: User = {
         id: currentUser.uid,
         name: currentUser.displayName || "Unnamed User",
         email: currentUser.email || "",
-        role: "student", // Default role; adjust as needed
+        role: "student",
       };
       await setDoc(userDocRef, defaultUser);
       return defaultUser;
@@ -295,13 +328,46 @@ export default function Dashboard() {
     return { id: userSnap.id, ...userSnap.data() } as User;
   };
 
+  const fetchCourses = async () => {
+    try {
+      const coursesSnapshot = await getDocs(collection(db, "courses"));
+      const coursesList = await Promise.all(
+        coursesSnapshot.docs.map(async (courseDoc) => {
+          const courseData = courseDoc.data();
+          const resourcesSnapshot = await getDocs(
+            collection(db, "courses", courseDoc.id, "resources")
+          );
+          const assignmentsSnapshot = await getDocs(
+            collection(db, "courses", courseDoc.id, "assignments")
+          );
+          const resources = resourcesSnapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data(), uploadedAt: doc.data().uploadedAt?.toDate() || new Date() }) as Resource
+          );
+          const assignments = assignmentsSnapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Assignment
+          );
+          return {
+            id: courseDoc.id,
+            name: courseData.name || "Unnamed Course",
+            teacherId: courseData.teacherId || "",
+            resources,
+            assignments,
+            tests: courseData.tests || [],
+          } as Course;
+        })
+      );
+      setAllCourses(coursesList);
+    } catch (err) {
+      console.error("Error fetching courses:", err);
+    }
+  };
+
   const fetchData = useCallback(async (currentUser: any) => {
     setIsLoading(true);
     try {
-      // Initialize or fetch user data
       const fetchedUserData = await initializeUserDoc(currentUser);
 
-      setRole(fetchedUserData.role || "");
+      setRole((fetchedUserData.role || "") as Role);
       setUsername(fetchedUserData.name || "Unnamed");
       setUserData(fetchedUserData);
       const hour = new Date().getHours();
@@ -309,7 +375,6 @@ export default function Dashboard() {
         hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening"
       );
 
-      // Fetch student data if student
       if (fetchedUserData.role === "student") {
         const studentDocRef = doc(db, "students", currentUser.uid);
         const studentSnap = await getDoc(studentDocRef);
@@ -322,6 +387,11 @@ export default function Dashboard() {
             notifications: studentSnap.data().notifications || [],
             grades: studentSnap.data().grades || {},
             courses: studentSnap.data().courses || [],
+            totalOwed: studentSnap.data().totalOwed || 0,
+            totalPaid: studentSnap.data().totalPaid || 0,
+            balance: studentSnap.data().balance || 0,
+            paymentStatus: studentSnap.data().paymentStatus || "Unpaid",
+            clearance: studentSnap.data().clearance || false,
           } as StudentData;
         }
         if (!fetchedStudentData) {
@@ -346,7 +416,6 @@ export default function Dashboard() {
         setStudentData(fetchedStudentData);
       }
 
-      // Fetch all students and lecturers for admin/teacher/accountsadmin
       if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
         const studentsSnapshot = await getDocs(collection(db, "students"));
         const studentsList = studentsSnapshot.docs.map((studentDoc) => ({
@@ -357,20 +426,27 @@ export default function Dashboard() {
           grades: studentDoc.data().grades || {},
           clearance: studentDoc.data().clearance ?? false,
           courses: studentDoc.data().courses || [],
+          totalOwed: studentDoc.data().totalOwed || 0,
+          totalPaid: studentDoc.data().totalPaid || 0,
+          balance: studentDoc.data().balance || 0,
+          paymentStatus: studentDoc.data().paymentStatus || "Unpaid",
         })) as StudentData[];
         setAllStudents(studentsList);
 
-        // Fetch only teachers explicitly to avoid permission issues
         const lecturersList: User[] = [];
         for (const student of studentsList) {
           if (student.lecturerId) {
-            const lecturerDocRef = doc(db, "users", student.lecturerId);
-            const lecturerSnap = await getDoc(lecturerDocRef);
-            if (lecturerSnap.exists() && lecturerSnap.data().role === "teacher") {
-              lecturersList.push({
-                id: lecturerSnap.id,
-                ...lecturerSnap.data(),
-              } as User);
+            try {
+              const lecturerDocRef = doc(db, "users", student.lecturerId);
+              const lecturerSnap = await getDoc(lecturerDocRef);
+              if (lecturerSnap.exists() && lecturerSnap.data().role === "teacher") {
+                lecturersList.push({
+                  id: lecturerSnap.id,
+                  ...lecturerSnap.data(),
+                } as User);
+              }
+            } catch (err) {
+              console.warn(`Failed to fetch lecturer ${student.lecturerId}:`, err);
             }
           }
         }
@@ -384,34 +460,7 @@ export default function Dashboard() {
         }
       }
 
-      // Fetch courses
-      const coursesSnapshot = await getDocs(collection(db, "courses"));
-      const coursesList = await Promise.all(
-        coursesSnapshot.docs.map(async (courseDoc) => {
-          const courseData = courseDoc.data();
-          const resourcesSnapshot = await getDocs(
-            collection(db, "courses", courseDoc.id, "resources")
-          );
-          const assignmentsSnapshot = await getDocs(
-            collection(db, "courses", courseDoc.id, "assignments")
-          );
-          const resources = resourcesSnapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as Resource
-          );
-          const assignments = assignmentsSnapshot.docs.map(
-            (doc) => ({ id: doc.id, ...doc.data() }) as Assignment
-          );
-          return {
-            id: courseDoc.id,
-            name: courseData.name || "Unnamed Course",
-            teacherId: courseData.teacherId || "",
-            resources,
-            assignments,
-            tests: courseData.tests || [],
-          } as Course;
-        })
-      );
-      setAllCourses(coursesList);
+      await fetchCourses();
     } catch (err: any) {
       console.error("Error fetching data:", err);
       setError(
@@ -441,38 +490,124 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, [user, router, fetchData]);
 
-  const handleAddResource = async (
-    courseId: string,
-    name: string,
-    type: string,
-    url: string
-  ) => {
-    if (!["teacher", "admin"].includes(role) || !user) return;
+  const fetchResources = async () => {
     try {
-      const resourceRef = doc(collection(db, "courses", courseId, "resources"));
-      const newResource: Resource = {
-        id: resourceRef.id,
-        name,
+      const coursesSnapshot = await getDocs(collection(db, "courses"));
+      const allResources: Resource[] = [];
+      for (const courseDoc of coursesSnapshot.docs) {
+        const resourcesSnapshot = await getDocs(
+          collection(db, "courses", courseDoc.id, "resources")
+        );
+        const courseResources = resourcesSnapshot.docs.map(
+          (doc) => ({
+            id: doc.id,
+            ...doc.data(),
+            uploadedAt: doc.data().uploadedAt?.toDate() || new Date(),
+          }) as Resource
+        );
+        allResources.push(...courseResources);
+      }
+      setResources(allResources);
+    } catch (error) {
+      console.error('Error fetching resources:', error);
+    }
+  };
+
+  const handleResourceUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newResource.title || !newResource.type || !newResource.url || !newResource.description) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const resourceRef = collection(db, 'resources');
+      await addDoc(resourceRef, {
+        ...newResource,
+        uploadedBy: userData?.name || 'Unknown',
+        uploadedAt: new Date()
+      });
+
+      setNewResource({});
+      fetchResources();
+      alert('Resource uploaded successfully');
+    } catch (error) {
+      console.error('Error uploading resource:', error);
+      alert('Failed to upload resource');
+    }
+  };
+
+  const handleGradeSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newGrade.studentId || !newGrade.courseCode || !newGrade.courseName || !newGrade.mark || !newGrade.grade || !newGrade.credits || !newGrade.semester) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      const studentRef = doc(db, 'students', newGrade.studentId);
+      const studentDoc = await getDoc(studentRef);
+
+      if (!studentDoc.exists()) {
+        alert('Student not found');
+        return;
+      }
+
+      const gradeData = {
+        ...newGrade,
+        quality: calculateQualityPoints(newGrade.grade, newGrade.credits),
+        updatedAt: new Date(),
+        id: uuidv4(),
+      };
+
+      const currentGrades = studentDoc.data().grades || {};
+      currentGrades[`${newGrade.courseCode}_${newGrade.semester}`] = gradeData.mark;
+
+      await updateDoc(studentRef, { grades: currentGrades });
+      setNewGrade({});
+      alert('Grade submitted successfully');
+    } catch (error) {
+      console.error('Error submitting grade:', error);
+      alert('Failed to submit grade');
+    }
+  };
+
+  const calculateQualityPoints = (grade: string, credits: number): number => {
+    const gradePoints: { [key: string]: number } = {
+      'A+': 4.0, 'A': 4.0, 'A-': 3.7,
+      'B+': 3.3, 'B': 3.0, 'B-': 2.7,
+      'C+': 2.3, 'C': 2.0, 'C-': 1.7,
+      'D+': 1.3, 'D': 1.0, 'F': 0.0
+    };
+
+    const points = gradePoints[grade.toUpperCase()] || 0;
+    return points * credits;
+  };
+
+  const handleAddResource = async (
+    title: string,
+    type: 'link' | 'video' | 'pdf',
+    url: string,
+    description: string
+  ) => {
+    if (!['teacher', 'admin'].includes(role) || !user || !selectedCourseId) return;
+
+    try {
+      const resourceRef = collection(db, 'courses', selectedCourseId, 'resources');
+      await addDoc(resourceRef, {
+        title,
         type,
         url,
-        uploadDate: new Date().toISOString(),
-      };
-      await setDoc(resourceRef, newResource);
-      setAllCourses((prev) =>
-        prev.map((c) =>
-          c.id === courseId
-            ? { ...c, resources: [...(c.resources || []), newResource] }
-            : c
-        )
-      );
-      alert("Resource added successfully!");
-    } catch (err: any) {
-      console.error("Error adding resource:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to add resources."
-          : err.message || "Failed to add resource."
-      );
+        description,
+        uploadedAt: new Date(),
+        uploadedBy: userData?.name || 'Unknown',
+      });
+
+      await fetchCourses();
+      alert('Resource added successfully!');
+    } catch (error) {
+      console.error('Error adding resource:', error);
+      alert('Failed to add resource');
     }
   };
 
@@ -484,18 +619,16 @@ export default function Dashboard() {
   ) => {
     if (!["teacher", "admin"].includes(role) || !user) return;
     try {
-      const assignmentRef = doc(
-        collection(db, "courses", courseId, "assignments")
-      );
+      const assignmentRef = collection(db, "courses", courseId, "assignments");
       const newAssignment: Assignment = {
-        id: assignmentRef.id,
+        id: uuidv4(),
         courseId,
         title,
         description,
         points,
         createdAt: new Date().toISOString(),
       };
-      await setDoc(assignmentRef, newAssignment);
+      await addDoc(assignmentRef, newAssignment);
       setAllCourses((prev) =>
         prev.map((c) =>
           c.id === courseId
@@ -681,15 +814,20 @@ export default function Dashboard() {
       doc.save("Financial_Report.pdf");
     } catch (err: any) {
       console.error("Error generating financial report:", err);
-      alert(
-        err.message || "Failed to generate financial report."
-      );
+      alert(err.message || "Failed to generate financial report.");
     }
   };
 
   const filteredStudents = allStudents.filter((student) =>
     student.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  const [newResource, setNewResource] = useState<Partial<Resource>>({});
+  const [newGrade, setNewGrade] = useState<Partial<Grade>>({});
+
+  useEffect(() => {
+    fetchResources();
+  }, []);
 
   if (isLoading) {
     return (
@@ -909,11 +1047,11 @@ export default function Dashboard() {
                                   rel="noopener noreferrer"
                                   className="hover:underline"
                                 >
-                                  {resource.name} ({resource.type})
+                                  {resource.title} ({resource.type})
                                 </a>{" "}
                                 - Uploaded:{" "}
                                 {new Date(
-                                  resource.uploadDate
+                                  resource.uploadedAt
                                 ).toLocaleString()}
                               </li>
                             ))}
@@ -1015,7 +1153,7 @@ export default function Dashboard() {
                                       ) {
                                         handleGradeAssignment(
                                           studentId,
-                                          selectedCourseId,
+                                          selectedCourseId!,
                                           assignment.id,
                                           parseInt(grade)
                                         );
@@ -1057,9 +1195,7 @@ export default function Dashboard() {
                     </h3>
                     <ResourceForm
                       courseId={selectedCourseId}
-                      onAddResource={(name, type, url) =>
-                        handleAddResource(selectedCourseId!, name, type, url)
-                      }
+                      onAddResource={handleAddResource}
                     />
                   </div>
                 </>
@@ -1112,6 +1248,212 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
+
+              {/* Resource Management */}
+              <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Upload Resources
+                </h3>
+                <form onSubmit={handleResourceUpload} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input
+                      type="text"
+                      placeholder="Resource Title"
+                      value={newResource.title || ''}
+                      onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    />
+                    <select
+                      value={newResource.type || undefined}
+                      onChange={(e) => {
+                        const value = e.target.value ? (e.target.value as 'video' | 'pdf' | 'link') : undefined;
+                        setNewResource({ ...newResource, type: value });
+                      }}
+                      className="p-2 border rounded"
+                      required
+                    >
+                      <option value="">Select Type</option>
+                      <option value="video">YouTube Video</option>
+                      <option value="pdf">PDF Document</option>
+                      <option value="link">External Link</option>
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Resource URL"
+                      value={newResource.url || ''}
+                      onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    />
+                    <input
+                      type="text"
+                      placeholder="Course Code (optional)"
+                      value={newResource.courseCode || ''}
+                      onChange={(e) => setNewResource({ ...newResource, courseCode: e.target.value })}
+                      className="p-2 border rounded"
+                    />
+                    <textarea
+                      placeholder="Description"
+                      value={newResource.description || ''}
+                      onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
+                      className="p-2 border rounded md:col-span-2"
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="bg-blue-800 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Upload Resource
+                  </button>
+                </form>
+              </div>
+
+              {/* Resources Display */}
+              <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Available Resources
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {resources.map((resource) => (
+                    <div key={resource.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+                      <h4 className="font-semibold text-blue-800">{resource.title}</h4>
+                      <p className="text-sm text-gray-600 mb-2">
+                        {resource.courseCode && <span className="font-semibold">[{resource.courseCode}] </span>}
+                        {resource.type.toUpperCase()}
+                      </p>
+                      <p className="text-sm mb-2">{resource.description}</p>
+                      <a
+                        href={resource.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:underline"
+                      >
+                        Access Resource
+                      </a>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Uploaded by {resource.uploadedBy} on {new Date(resource.uploadedAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Grade Management */}
+              <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Manage Grades
+                </h3>
+                <form onSubmit={handleGradeSubmit} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <select
+                      value={newGrade.studentId || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, studentId: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    >
+                      <option value="">Select Student</option>
+                      {allStudents.map(student => (
+                        <option key={student.id} value={student.id}>{student.name}</option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      placeholder="Course Code"
+                      value={newGrade.courseCode || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, courseCode: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    />
+                    <input
+                      type="text"
+                      placeholder="Course Name"
+                      value={newGrade.courseName || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, courseName: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Mark (%)"
+                      value={newGrade.mark || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, mark: Number(e.target.value) })}
+                      className="p-2 border rounded"
+                      required
+                      min="0"
+                      max="100"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Grade (A, B, C, etc.)"
+                      value={newGrade.grade || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, grade: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    />
+                    <input
+                      type="number"
+                      placeholder="Credits"
+                      value={newGrade.credits || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, credits: Number(e.target.value) })}
+                      className="p-2 border rounded"
+                      required
+                    />
+                    <input
+                      type="text"
+                      placeholder="Semester (e.g., 2023-2024 - 1)"
+                      value={newGrade.semester || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, semester: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    />
+                    <textarea
+                      placeholder="Comments (optional)"
+                      value={newGrade.comments || ''}
+                      onChange={(e) => setNewGrade({ ...newGrade, comments: e.target.value })}
+                      className="p-2 border rounded lg:col-span-3"
+                    />
+                  </div>
+                  <button type="submit" className="bg-blue-800 text-white px-4 py-2 rounded hover:bg-blue-700">
+                    Submit Grade
+                  </button>
+                </form>
+              </div>
+
+              {/* Student Grade Display */}
+              {(role as Role) === "student" && (
+                <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+                  <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                    My Grades
+                  </h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-blue-800 text-white">
+                          <th className="p-2 border">Course Code</th>
+                          <th className="p-2 border">Course Name</th>
+                          <th className="p-2 border">Mark (%)</th>
+                          <th className="p-2 border">Grade</th>
+                          <th className="p-2 border">Credits</th>
+                          <th className="p-2 border">Quality Points</th>
+                          <th className="p-2 border">Comments</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {studentData?.grades && Object.entries(studentData.grades).map(([key, grade]) => (
+                          <tr key={key} className="hover:bg-gray-50">
+                            <td className="p-2 border">{key.split('_')[0]}</td>
+                            <td className="p-2 border">-</td>
+                            <td className="p-2 border">{grade}</td>
+                            <td className="p-2 border">-</td>
+                            <td className="p-2 border">-</td>
+                            <td className="p-2 border">-</td>
+                            <td className="p-2 border">-</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Manage Students */}
               <div className="bg-white p-6 rounded-lg shadow-md">
