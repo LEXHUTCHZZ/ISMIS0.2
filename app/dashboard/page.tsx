@@ -3,7 +3,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { auth, db } from "../../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
-import { Test, Coursework } from "../../models/index";
 import {
   doc,
   getDoc,
@@ -20,20 +19,14 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import CheckoutPage from "../../components/CheckoutPage";
 import { markNotificationAsRead } from "../../utils/utils";
-import { sanitizeStudentData } from "../../utils/firestoreSanitizer";
-import { User as FirebaseUser } from 'firebase/auth';
 
-// Interfaces
+// Interfaces (unchanged)
 interface User {
   id: string;
   name: string;
-  email: string | null;
+  email: string;
   role: string;
   profilePicture?: string;
-  uid: string;
-  displayName: string | null;
-  photoURL: string | null;
-  emailVerified: boolean;
 }
 
 interface StudentData {
@@ -50,28 +43,15 @@ interface StudentData {
   transactions: Transaction[];
   notifications: Notification[];
   grades: Record<string, number>;
-  active?: boolean;
 }
-
-type Subject = {
-  id?: string;
-  name: string;
-  grades?: { [key: string]: string };
-  comments?: string;
-};
 
 interface Course {
   id: string;
   name: string;
-  teacherId?: string;
-  resources?: Resource[];
+  teacherId: string;
+  resources: Resource[];
   assignments: Assignment[];
-  tests?: Test[];
-  fee?: number;
-  subjects?: Subject[];
-  coursework?: Coursework[];
-  announcements?: any[];
-  description?: string;
+  tests: any[];
 }
 
 interface Transaction {
@@ -105,7 +85,7 @@ interface Assignment {
   createdAt: string;
 }
 
-// Resource Form Component
+// Resource Form Component (unchanged)
 const ResourceForm = ({
   courseId,
   onAddResource,
@@ -172,7 +152,7 @@ const ResourceForm = ({
   );
 };
 
-// Assignment Form Component
+// Assignment Form Component (unchanged)
 const AssignmentForm = ({
   courseId,
   onAddAssignment,
@@ -237,7 +217,7 @@ const AssignmentForm = ({
   );
 };
 
-// Notification List Component
+// Notification List Component (unchanged)
 const NotificationList = ({
   notifications,
   onMarkAsRead,
@@ -296,139 +276,59 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user } = useAuth();
 
-  const fetchData = useCallback(async (currentUser: FirebaseUser) => {
-    if (!currentUser) {
-      setError("No user found");
-      setIsLoading(false);
-      return;
-    }
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      // Fetch user data
-      const userDocRef = doc(db, "users", currentUser.uid);
-      const userSnap = await getDoc(userDocRef);
-      
-      if (!userSnap.exists()) {
-        // Create a new user document if it doesn't exist
-        const newUser = {
-          id: currentUser.uid,
-          name: currentUser.displayName || "Unnamed",
-          email: currentUser.email || "",
-          role: "student", // Default role
-          profilePicture: currentUser.photoURL || ""
-        };
-        await setDoc(userDocRef, newUser);
-        const userWithAuth: User = {
-        ...newUser,
-        uid: currentUser.uid,
-        displayName: currentUser.displayName,
-        photoURL: currentUser.photoURL,
-        emailVerified: currentUser.emailVerified,
-        email: currentUser.email
+  const initializeUserDoc = async (currentUser: any) => {
+    const userDocRef = doc(db, "users", currentUser.uid);
+    const userSnap = await getDoc(userDocRef);
+    if (!userSnap.exists()) {
+      // Create a default user document
+      const defaultUser: User = {
+        id: currentUser.uid,
+        name: currentUser.displayName || "Unnamed User",
+        email: currentUser.email || "",
+        role: "student", // Default role; adjust as needed
       };
-      setUserData(userWithAuth);
-        setRole(newUser.role);
-        setUsername(newUser.name);
-      } else {
-        const fetchedUserData = { id: userSnap.id, ...userSnap.data() } as User;
-        setRole(fetchedUserData.role || "");
-        setUsername(fetchedUserData.name || "Unnamed");
-        const userWithAuth: User = {
-          ...fetchedUserData,
-          uid: currentUser.uid,
-          displayName: currentUser.displayName,
-          photoURL: currentUser.photoURL,
-          emailVerified: currentUser.emailVerified,
-          email: currentUser.email
-        };
-        setUserData(userWithAuth);
-      }
+      await setDoc(userDocRef, defaultUser);
+      return defaultUser;
+    }
+    return { id: userSnap.id, ...userSnap.data() } as User;
+  };
 
+  const fetchData = useCallback(async (currentUser: any) => {
+    setIsLoading(true);
+    try {
+      // Initialize or fetch user data
+      const fetchedUserData = await initializeUserDoc(currentUser);
+
+      setRole(fetchedUserData.role || "");
+      setUsername(fetchedUserData.name || "Unnamed");
+      setUserData(fetchedUserData);
       const hour = new Date().getHours();
       setGreeting(
         hour < 12 ? "Good Morning" : hour < 18 ? "Good Afternoon" : "Good Evening"
       );
 
-      // Fetch student data if user is a student
-      // Fetch all students data
-      const studentsSnapshot = await getDocs(collection(db, "students"));
-      const studentsList = await Promise.all(
-        studentsSnapshot.docs.map(async (studentDoc) => {
-          const rawData = {
-            id: studentDoc.id,
-            ...studentDoc.data()
-          };
-          return sanitizeStudentData(rawData);
-        })
-      );
-      const processedStudents = studentsList.map((s: any): StudentData => {
-        const processedCourses = (s.courses || []).map((c: Partial<Course>) => ({
-          ...c,
-          id: c.id || '',
-          name: c.name || '',
-          teacherId: c.teacherId || '',
-          assignments: c.assignments || [],
-          resources: c.resources || [],
-          tests: c.tests || [],
-          fee: c.fee,
-          subjects: c.subjects || [],
-          coursework: c.coursework || [],
-          announcements: c.announcements || [],
-          description: c.description
-        } as Course));
-        
-        return {
-          ...s,
-          courses: processedCourses
-        } as StudentData;
-      });
-      
-      setAllStudents(processedStudents);
-
-      // If current user is a student, find their data
-      if (userData?.role === "student") {
-        const studentDoc = await getDoc(doc(db, "students", currentUser.uid));
-        if (studentDoc.exists()) {
-          const rawStudentData = {
-            id: studentDoc.id,
-            ...(studentDoc.data() as any)
+      // Fetch student data if student
+      if (fetchedUserData.role === "student") {
+        const studentDocRef = doc(db, "students", currentUser.uid);
+        const studentSnap = await getDoc(studentDocRef);
+        let fetchedStudentData: StudentData | null = null;
+        if (studentSnap.exists()) {
+          fetchedStudentData = {
+            id: studentSnap.id,
+            ...studentSnap.data(),
+            transactions: studentSnap.data().transactions || [],
+            notifications: studentSnap.data().notifications || [],
+            grades: studentSnap.data().grades || {},
+            courses: studentSnap.data().courses || [],
           } as StudentData;
-          const processedCourses = (rawStudentData.courses || []).map((c: Partial<Course>) => ({
-            id: c.id || '',
-            name: c.name || '',
-            teacherId: c.teacherId || '',
-            assignments: c.assignments || [],
-            resources: c.resources || [],
-            tests: c.tests || [],
-            fee: c.fee,
-            subjects: c.subjects,
-            coursework: c.coursework,
-            announcements: c.announcements,
-            description: c.description
-          } as Course));
-          
-          const sanitizedData = sanitizeStudentData({
-            ...rawStudentData,
-            courses: processedCourses.map((c: Course) => ({
-              ...c,
-              teacherId: c.teacherId || '',
-              assignments: c.assignments || [],
-              resources: c.resources || [],
-              tests: c.tests || []
-            }))
-          });
-          setStudentData(sanitizedData as unknown as StudentData);
-        } else {
-          // Create new student document if it doesn't exist
-          const newStudentData: StudentData = sanitizeStudentData({
+        }
+        if (!fetchedStudentData) {
+          const newStudent: StudentData = {
             id: currentUser.uid,
-            name: userData.name,
-            email: userData.email,
+            name: fetchedUserData.name || "Student",
+            email: fetchedUserData.email || "",
             lecturerId: null,
             courses: [],
             totalOwed: 0,
@@ -438,94 +338,91 @@ export default function Dashboard() {
             clearance: false,
             transactions: [],
             notifications: [],
-            grades: {}
-          });
-          await setDoc(doc(db, "students", currentUser.uid), newStudentData);
-          setStudentData(newStudentData as unknown as StudentData);
+            grades: {},
+          };
+          await setDoc(studentDocRef, newStudent);
+          fetchedStudentData = newStudent;
+        }
+        setStudentData(fetchedStudentData);
+      }
+
+      // Fetch all students and lecturers for admin/teacher/accountsadmin
+      if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
+        const studentsSnapshot = await getDocs(collection(db, "students"));
+        const studentsList = studentsSnapshot.docs.map((studentDoc) => ({
+          id: studentDoc.id,
+          ...studentDoc.data(),
+          transactions: studentDoc.data().transactions || [],
+          notifications: studentDoc.data().notifications || [],
+          grades: studentDoc.data().grades || {},
+          clearance: studentDoc.data().clearance ?? false,
+          courses: studentDoc.data().courses || [],
+        })) as StudentData[];
+        setAllStudents(studentsList);
+
+        // Fetch only teachers explicitly to avoid permission issues
+        const lecturersList: User[] = [];
+        for (const student of studentsList) {
+          if (student.lecturerId) {
+            const lecturerDocRef = doc(db, "users", student.lecturerId);
+            const lecturerSnap = await getDoc(lecturerDocRef);
+            if (lecturerSnap.exists() && lecturerSnap.data().role === "teacher") {
+              lecturersList.push({
+                id: lecturerSnap.id,
+                ...lecturerSnap.data(),
+              } as User);
+            }
+          }
+        }
+        setAllLecturers(lecturersList);
+
+        if (fetchedUserData.role === "teacher" && studentsList.length > 0) {
+          const assignedStudent = studentsList.find(
+            (s) => s.lecturerId === currentUser.uid
+          );
+          setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
         }
       }
 
-      // Fetch all lecturers
-      const usersSnapshot = await getDocs(collection(db, "users"));
-      const lecturersList = usersSnapshot.docs
-        .map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }) as User)
-        .filter((u) => u.role === "teacher");
-      setAllLecturers(lecturersList);
-
-      // If user is a teacher, find their assigned student
-      if (userData?.role === "teacher" && studentsList.length > 0) {
-        const assignedStudent = studentsList.find(
-          (s) => s.lecturerId === currentUser.uid
-        );
-        setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
-      }
-
-      setIsLoading(false);
-    } catch (err) {
+      // Fetch courses
+      const coursesSnapshot = await getDocs(collection(db, "courses"));
+      const coursesList = await Promise.all(
+        coursesSnapshot.docs.map(async (courseDoc) => {
+          const courseData = courseDoc.data();
+          const resourcesSnapshot = await getDocs(
+            collection(db, "courses", courseDoc.id, "resources")
+          );
+          const assignmentsSnapshot = await getDocs(
+            collection(db, "courses", courseDoc.id, "assignments")
+          );
+          const resources = resourcesSnapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Resource
+          );
+          const assignments = assignmentsSnapshot.docs.map(
+            (doc) => ({ id: doc.id, ...doc.data() }) as Assignment
+          );
+          return {
+            id: courseDoc.id,
+            name: courseData.name || "Unnamed Course",
+            teacherId: courseData.teacherId || "",
+            resources,
+            assignments,
+            tests: courseData.tests || [],
+          } as Course;
+        })
+      );
+      setAllCourses(coursesList);
+    } catch (err: any) {
       console.error("Error fetching data:", err);
-      setError(err instanceof Error ? err.message : "An error occurred while fetching data");
+      setError(
+        err.code === "permission-denied"
+          ? "Permission denied. Please ensure your account is set up correctly."
+          : err.message || "Failed to load dashboard data."
+      );
+    } finally {
       setIsLoading(false);
     }
-
-    }, []);
-
-    useEffect(() => {
-      if (!user || loading) {
-      setIsLoading(false);
-      return;
-    }
-      fetchData(user);
-    }, [user, loading, fetchData]);
-
-    useEffect(() => {
-      if (!userData?.role) return;
-
-      const loadCourses = async () => {
-        try {
-          const coursesSnapshot = await getDocs(collection(db, "courses"));
-          const coursesList = await Promise.all(
-            coursesSnapshot.docs.map(async (courseDoc) => {
-              const courseData = courseDoc.data();
-              const resourcesSnapshot = await getDocs(
-                collection(db, "courses", courseDoc.id, "resources")
-              );
-              const assignmentsSnapshot = await getDocs(
-                collection(db, "courses", courseDoc.id, "assignments")
-              );
-              const resources = resourcesSnapshot.docs.map(
-                (doc) => ({ id: doc.id, ...doc.data() }) as Resource
-              );
-              const assignments = assignmentsSnapshot.docs.map(
-                (doc) => ({ id: doc.id, ...doc.data() }) as Assignment
-              );
-              return {
-                id: courseDoc.id,
-                name: courseData.name || "Unnamed Course",
-                teacherId: courseData.teacherId || "",
-                resources,
-                assignments,
-                tests: courseData.tests || [],
-              } as Course;
-            })
-          );
-          setAllCourses(coursesList);
-        } catch (err) {
-          console.error("Error fetching data:", err);
-          setError(
-            err instanceof Error ? err.message : "Failed to load dashboard data."
-          );
-        } finally {
-          setIsLoading(false);
-        }
-      };
-
-      if (user && userData?.role) {
-        loadCourses();
-      }
-    }, [userData?.role, user]);
+  }, []);
 
   useEffect(() => {
     if (!user) {
@@ -533,14 +430,15 @@ export default function Dashboard() {
       return;
     }
 
-    if (loading) {
-      setIsLoading(true);
-      return;
-    }
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      if (!currentUser) {
+        router.push("/auth/login");
+        return;
+      }
+      fetchData(currentUser);
+    });
 
-    fetchData(user);
-
-    return () => {};
+    return () => unsubscribe();
   }, [user, router, fetchData]);
 
   const handleAddResource = async (
@@ -568,9 +466,13 @@ export default function Dashboard() {
         )
       );
       alert("Resource added successfully!");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error adding resource:", err);
-      alert(err instanceof Error ? err.message : "Failed to add resource.");
+      alert(
+        err.code === "permission-denied"
+          ? "You do not have permission to add resources."
+          : err.message || "Failed to add resource."
+      );
     }
   };
 
@@ -602,9 +504,13 @@ export default function Dashboard() {
         )
       );
       alert("Assignment created successfully!");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error adding assignment:", err);
-      alert(err instanceof Error ? err.message : "Failed to create assignment.");
+      alert(
+        err.code === "permission-denied"
+          ? "You do not have permission to create assignments."
+          : err.message || "Failed to create assignment."
+      );
     }
   };
 
@@ -638,9 +544,13 @@ export default function Dashboard() {
         );
       }
       alert("Grade updated successfully!");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error grading assignment:", err);
-      alert(err instanceof Error ? err.message : "Failed to update grade.");
+      alert(
+        err.code === "permission-denied"
+          ? "You do not have permission to update grades."
+          : err.message || "Failed to update grade."
+      );
     }
   };
 
@@ -652,9 +562,13 @@ export default function Dashboard() {
         prev.map((s) => (s.id === studentId ? { ...s, clearance: true } : s))
       );
       alert("Clearance granted!");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error granting clearance:", err);
-      alert(err instanceof Error ? err.message : "Failed to grant clearance.");
+      alert(
+        err.code === "permission-denied"
+          ? "You do not have permission to grant clearance."
+          : err.message || "Failed to grant clearance."
+      );
     }
   };
 
@@ -666,9 +580,13 @@ export default function Dashboard() {
         prev.map((s) => (s.id === studentId ? { ...s, clearance: false } : s))
       );
       alert("Clearance removed!");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error removing clearance:", err);
-      alert(err instanceof Error ? err.message : "Failed to remove clearance.");
+      alert(
+        err.code === "permission-denied"
+          ? "You do not have permission to remove clearance."
+          : err.message || "Failed to remove clearance."
+      );
     }
   };
 
@@ -682,9 +600,13 @@ export default function Dashboard() {
         setSelectedStudentId(null);
       }
       alert("Account deleted successfully!");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error deleting account:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete account.");
+      alert(
+        err.code === "permission-denied"
+          ? "You do not have permission to delete accounts."
+          : err.message || "Failed to delete account."
+      );
     }
   };
 
@@ -707,9 +629,13 @@ export default function Dashboard() {
         transactions: updatedTransactions,
       });
       alert("Payment processed successfully!");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error processing payment:", err);
-      alert(err instanceof Error ? err.message : "Failed to process payment.");
+      alert(
+        err.code === "permission-denied"
+          ? "You do not have permission to process payments."
+          : err.message || "Failed to process payment."
+      );
     }
   };
 
@@ -723,12 +649,12 @@ export default function Dashboard() {
           n.id === notificationId ? { ...n, read: true } : n
         ),
       });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error marking notification as read:", err);
       alert(
-        err instanceof Error
-          ? err.message
-          : "Failed to mark notification as read."
+        err.code === "permission-denied"
+          ? "You do not have permission to update notifications."
+          : err.message || "Failed to mark notification as read."
       );
     }
   };
@@ -753,12 +679,10 @@ export default function Dashboard() {
         headStyles: { fillColor: [30, 64, 175] },
       });
       doc.save("Financial_Report.pdf");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error generating financial report:", err);
       alert(
-        err instanceof Error
-          ? err.message
-          : "Failed to generate financial report."
+        err.message || "Failed to generate financial report."
       );
     }
   };
@@ -975,7 +899,7 @@ export default function Dashboard() {
                         const course = allCourses.find(
                           (c) => c.id === selectedCourseId
                         );
-                        return course && course.resources && course.resources.length > 0 ? (
+                        return course && course.resources.length > 0 ? (
                           <ul className="space-y-2">
                             {course.resources.map((resource) => (
                               <li key={resource.id} className="text-blue-800">
@@ -1059,9 +983,9 @@ export default function Dashboard() {
                       const course = allCourses.find(
                         (c) => c.id === selectedCourseId
                       );
-                      return course && (course.assignments || []).length ? (
+                      return course && course.assignments.length ? (
                         <>
-                          {(course.assignments || []).map((assignment) => (
+                          {course.assignments.map((assignment) => (
                             <div
                               key={assignment.id}
                               className="p-4 bg-gray-50 rounded mb-4"
