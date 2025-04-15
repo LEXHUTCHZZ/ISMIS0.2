@@ -40,24 +40,70 @@ export default function Login() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username) {
-      setError("Username is required");
+    setError('');
+
+    // Validate all required fields
+    if (!email || !password || !username || !role) {
+      setError('All fields are required');
+      return;
+    }
+
+    // Basic email validation
+    if (!email.includes('@')) {
+      setError('Please enter a valid email address');
       return;
     }
 
     try {
+      // First try to sign in
       const { user } = await signInWithEmailAndPassword(auth, email, password);
-      const userDoc = await getDoc(doc(db, "users", user.uid));
-      const userData = userDoc.data() as UserData | undefined;
-
-      if (!userDoc.exists() || userData?.name !== username || userData?.role !== role) {
-        setError("Username or role does not match registered data");
+      
+      if (!user) {
+        setError('Authentication failed');
         return;
       }
 
-      router.push("/dashboard");
+      // Then get the user document
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      const userData = userDoc.data() as UserData | undefined;
+
+      // Validate user data
+      if (!userDoc.exists()) {
+        setError('User profile not found. Please contact support.');
+        return;
+      }
+
+      if (userData?.name !== username) {
+        setError('Username does not match our records');
+        return;
+      }
+
+      if (userData?.role !== role) {
+        setError('Selected role does not match your account type');
+        return;
+      }
+
+      // If all validation passes, redirect to dashboard
+      router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || "Login failed");
+      console.error('Login error:', err);
+      // Handle specific Firebase auth errors
+      switch (err.code) {
+        case 'auth/user-not-found':
+          setError('No account found with this email');
+          break;
+        case 'auth/wrong-password':
+          setError('Incorrect password');
+          break;
+        case 'auth/invalid-email':
+          setError('Invalid email format');
+          break;
+        case 'auth/too-many-requests':
+          setError('Too many failed attempts. Please try again later');
+          break;
+        default:
+          setError(err.message || 'Login failed. Please try again.');
+      }
     }
   };
 

@@ -22,32 +22,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     // Subscribe to auth state changes
     const unsubscribe = onAuthStateChanged(
       auth,
       async (user) => {
-        setUser(user);
-        if (user) {
-          try {
+        if (!isMounted) return;
+
+        try {
+          if (user) {
+            // Get user document
             const userDoc = await getDoc(doc(db, 'users', user.uid));
+            
             if (userDoc.exists()) {
-              setRole(userDoc.data().role);
+              const userData = userDoc.data();
+              if (userData && userData.role) {
+                setUser(user);
+                setRole(userData.role);
+              } else {
+                console.error('Invalid user data structure');
+                setUser(null);
+                setRole(null);
+              }
             } else {
+              console.error('User document does not exist');
+              setUser(null);
               setRole(null);
             }
-          } catch (error) {
-            console.error('Error fetching user role:', error);
+          } else {
+            setUser(null);
             setRole(null);
           }
-        } else {
+        } catch (error) {
+          console.error('Error in auth state change:', error);
+          setUser(null);
           setRole(null);
+        } finally {
+          if (isMounted) {
+            setLoading(false);
+          }
         }
-        setLoading(false); // Auth state resolved
       },
       (error) => {
-        console.error("Auth state change error:", error);
-        setLoading(false); // Ensure loading is false even on error
-        setRole(null);
+        if (isMounted) {
+          console.error('Auth state change error:', error);
+          setUser(null);
+          setRole(null);
+          setLoading(false);
+        }
       }
     );
 

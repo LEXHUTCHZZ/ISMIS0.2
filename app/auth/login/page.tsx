@@ -17,6 +17,7 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState<"student" | "teacher" | "admin" | "accountsadmin">("student");
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
@@ -39,9 +40,15 @@ export default function Login() {
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!username) {
-      setError("Username is required");
+    // Validate all required fields
+    if (!email || !password || !confirmPassword || !username || !role) {
+      setError('All fields are required');
+      return;
+    }
+
+    // Check if passwords match
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
       return;
     }
 
@@ -108,6 +115,13 @@ export default function Login() {
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
+          />
+          <input
+            type="password"
+            placeholder="Confirm Password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
             className="w-full p-3 border border-gray-400 rounded focus:outline-none focus:ring-2 focus:ring-red-800 bg-white bg-opacity-80 text-gray-900 placeholder-gray-500"
           />
           <div>
