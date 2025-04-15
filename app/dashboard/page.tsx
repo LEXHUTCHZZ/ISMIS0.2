@@ -522,22 +522,19 @@ export default function Dashboard() {
         }
       };
 
-      loadCourses();
+      if (user && userData?.role) {
+        loadCourses();
+      }
     }, [userData?.role, user]);
 
-    // Wait for both user and role to be available
-    if (!user || !userData?.role) {
-      return;
-    }
-
   useEffect(() => {
-    if (loading) {
-      setIsLoading(true);
-      return;
-    }
-
     if (!user) {
       router.push("/auth/login");
+      return;
+    }
+
+    if (loading) {
+      setIsLoading(true);
       return;
     }
 
