@@ -523,7 +523,12 @@ export default function Dashboard() {
       };
 
       loadCourses();
-    }, [userData?.role]);
+    }, [userData?.role, user]);
+
+    // Wait for both user and role to be available
+    if (!user || !userData?.role) {
+      return;
+    }
 
   useEffect(() => {
     if (loading) {

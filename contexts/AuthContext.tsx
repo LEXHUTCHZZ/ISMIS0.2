@@ -3,11 +3,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { auth,db } from "../lib/firebase";
 import { onAuthStateChanged, User } from "firebase/auth";
+import { getDoc, doc } from "firebase/firestore";
 
 // Define the shape of the context
 interface AuthContextType {
   user: User | null;
   loading: boolean; // Add loading state to handle async auth state
+  role: string | null;
 }
 
 // Create the context with a default value
@@ -17,18 +19,35 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true); // Track loading state
+  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
     // Subscribe to auth state changes
     const unsubscribe = onAuthStateChanged(
       auth,
-      (user) => {
+      async (user) => {
         setUser(user);
+        if (user) {
+          try {
+            const userDoc = await getDoc(doc(db, 'users', user.uid));
+            if (userDoc.exists()) {
+              setRole(userDoc.data().role);
+            } else {
+              setRole(null);
+            }
+          } catch (error) {
+            console.error('Error fetching user role:', error);
+            setRole(null);
+          }
+        } else {
+          setRole(null);
+        }
         setLoading(false); // Auth state resolved
       },
       (error) => {
         console.error("Auth state change error:", error);
         setLoading(false); // Ensure loading is false even on error
+        setRole(null);
       }
     );
 
@@ -37,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading }}>
+    <AuthContext.Provider value={{ user, loading, role }}>
       {children}
     </AuthContext.Provider>
   );
