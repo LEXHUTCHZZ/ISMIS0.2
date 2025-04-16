@@ -40,7 +40,7 @@ export interface StudentData {
   active?: boolean;
   courses: Course[];
   notifications: Notification[];
-  lecturerId: string | null;
+  teacherId: string | null;
   totalOwed: number;
   totalPaid: number;
   balance: number;

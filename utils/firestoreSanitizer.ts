@@ -60,7 +60,7 @@ import {
       id: safeString(data.id),
       name: safeString(data.name, "Unnamed"),
       email: safeString(data.email),
-      lecturerId: data.lecturerId ? safeString(data.lecturerId) : null,
+      teacherId: data.teacherId ? safeString(data.teacherId) : null,
       courses: safeArray<Course>(data.courses, []).map(sanitizeCourse),
       totalOwed: safeNumber(data.totalOwed, 0),
       totalPaid: safeNumber(data.totalPaid, 0),

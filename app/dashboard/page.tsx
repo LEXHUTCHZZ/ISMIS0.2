@@ -40,7 +40,7 @@ interface StudentData {
   id: string;
   name: string;
   email: string;
-  lecturerId: string | null;
+  teacherId: string | null;
   courses: Course[];
   totalOwed: number;
   totalPaid: number;
@@ -118,7 +118,7 @@ const ResourceForm = ({
   onAddResource: (title: string, type: 'video' | 'pdf' | 'link', url: string, description: string) => void;
 }) => {
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<"video" | "pdf" | "link" | "">("");
+  const [type, setType] = useState<"video" | "pdf" | "link">("video");
   const [url, setUrl] = useState("");
   const [description, setDescription] = useState("");
   const [error, setError] = useState("");
@@ -135,7 +135,7 @@ const ResourceForm = ({
     }
     onAddResource(title, type, url, description);
     setTitle("");
-    setType("");
+    setType("video");
     setUrl("");
     setDescription("");
     setError("");
@@ -152,10 +152,9 @@ const ResourceForm = ({
       />
       <select
         value={type}
-        onChange={(e) => setType(e.target.value as "video" | "pdf" | "link" | "")}
+        onChange={(e) => setType(e.target.value as "video" | "pdf" | "link")}
         className="w-full p-2 border rounded text-blue-800"
       >
-        <option value="">Select Type</option>
         <option value="video">Video</option>
         <option value="pdf">PDF</option>
         <option value="link">Link</option>
@@ -299,9 +298,9 @@ export default function Dashboard() {
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [resources, setResources] = useState<Resource[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
-  const [allLecturers, setAllLecturers] = useState<User[]>([]);
-  type Role = "admin" | "student" | "lecturer" | "teacher" | "accountsadmin" | "";
-  const [role, setRole] = useState<Role>("");
+  const [allTeachers, setAllTeachers] = useState<User[]>([]);
+  type Role = "admin" | "student" | "teacher" | "accountsadmin";
+  const [role, setRole] = useState<Role>("student");
   const [username, setUsername] = useState("");
   const [greeting, setGreeting] = useState("");
   const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
@@ -367,7 +366,7 @@ export default function Dashboard() {
     try {
       const fetchedUserData = await initializeUserDoc(currentUser);
 
-      setRole((fetchedUserData.role || "") as Role);
+      setRole(fetchedUserData.role as Role);
       setUsername(fetchedUserData.name || "Unnamed");
       setUserData(fetchedUserData);
       const hour = new Date().getHours();
@@ -399,7 +398,7 @@ export default function Dashboard() {
             id: currentUser.uid,
             name: fetchedUserData.name || "Student",
             email: fetchedUserData.email || "",
-            lecturerId: null,
+            teacherId: null,
             courses: [],
             totalOwed: 0,
             totalPaid: 0,
@@ -433,28 +432,28 @@ export default function Dashboard() {
         })) as StudentData[];
         setAllStudents(studentsList);
 
-        const lecturersList: User[] = [];
+        const teachersList: User[] = [];
         for (const student of studentsList) {
-          if (student.lecturerId) {
+          if (student.teacherId) {
             try {
-              const lecturerDocRef = doc(db, "users", student.lecturerId);
-              const lecturerSnap = await getDoc(lecturerDocRef);
-              if (lecturerSnap.exists() && lecturerSnap.data().role === "teacher") {
-                lecturersList.push({
-                  id: lecturerSnap.id,
-                  ...lecturerSnap.data(),
+              const teacherDocRef = doc(db, "users", student.teacherId);
+              const teacherSnap = await getDoc(teacherDocRef);
+              if (teacherSnap.exists() && teacherSnap.data().role === "teacher") {
+                teachersList.push({
+                  id: teacherSnap.id,
+                  ...teacherSnap.data(),
                 } as User);
               }
             } catch (err) {
-              console.warn(`Failed to fetch lecturer ${student.lecturerId}:`, err);
+              console.warn(`Failed to fetch teacher ${student.teacherId}:`, err);
             }
           }
         }
-        setAllLecturers(lecturersList);
+        setAllTeachers(teachersList);
 
         if (fetchedUserData.role === "teacher" && studentsList.length > 0) {
           const assignedStudent = studentsList.find(
-            (s) => s.lecturerId === currentUser.uid
+            (s) => s.teacherId === currentUser.uid
           );
           setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
         }
@@ -528,7 +527,13 @@ export default function Dashboard() {
         uploadedAt: new Date()
       });
 
-      setNewResource({});
+      setNewResource({
+        title: '',
+        type: 'video',
+        url: '',
+        description: '',
+        courseCode: '',
+      });
       fetchResources();
       alert('Resource uploaded successfully');
     } catch (error) {
@@ -564,7 +569,16 @@ export default function Dashboard() {
       currentGrades[`${newGrade.courseCode}_${newGrade.semester}`] = gradeData.mark;
 
       await updateDoc(studentRef, { grades: currentGrades });
-      setNewGrade({});
+      setNewGrade({
+        studentId: '',
+        courseCode: '',
+        courseName: '',
+        mark: 0,
+        grade: '',
+        credits: 0,
+        semester: '',
+        comments: '',
+      });
       alert('Grade submitted successfully');
     } catch (error) {
       console.error('Error submitting grade:', error);
@@ -617,7 +631,7 @@ export default function Dashboard() {
     description: string,
     points: number
   ) => {
-    if (!["teacher", "admin"].includes(role) || !user) return;
+    if (!["teacher", "admin"].includes(role) || !user || !courseId) return;
     try {
       const assignmentRef = collection(db, "courses", courseId, "assignments");
       const newAssignment: Assignment = {
@@ -655,7 +669,7 @@ export default function Dashboard() {
   ) => {
     if (role !== "teacher" || !user) return;
     const student = allStudents.find((s) => s.id === studentId);
-    if (!student || student.lecturerId !== user.uid) {
+    if (!student || student.teacherId !== user.uid) {
       alert("You can only grade assignments for students assigned to you.");
       return;
     }
@@ -822,8 +836,23 @@ export default function Dashboard() {
     student.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const [newResource, setNewResource] = useState<Partial<Resource>>({});
-  const [newGrade, setNewGrade] = useState<Partial<Grade>>({});
+  const [newResource, setNewResource] = useState<Partial<Resource>>({
+    title: '',
+    type: 'video',
+    url: '',
+    description: '',
+    courseCode: '',
+  });
+  const [newGrade, setNewGrade] = useState<Partial<Grade>>({
+    studentId: '',
+    courseCode: '',
+    courseName: '',
+    mark: 0,
+    grade: '',
+    credits: 0,
+    semester: '',
+    comments: '',
+  });
 
   useEffect(() => {
     fetchResources();
@@ -851,10 +880,6 @@ export default function Dashboard() {
         </div>
       </div>
     );
-  }
-
-  if (!role) {
-    return null;
   }
 
   return (
@@ -1076,38 +1101,23 @@ export default function Dashboard() {
           {/* Teacher Dashboard */}
           {role === "teacher" && (
             <div className="space-y-6">
-              {/* Course Selection and Quick Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                <div className="md:col-span-2 bg-white p-6 rounded-lg shadow-md">
-                  <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                    Your Courses
-                  </h3>
-                  <select
-                    value={selectedCourseId || ""}
-                    onChange={(e) => setSelectedCourseId(e.target.value)}
-                    className="w-full p-2 border rounded text-blue-800"
-                  >
-                    <option value="">Select a Course</option>
-                    {allCourses
-                      .filter((c) => user && c.teacherId === user.uid)
-                      .map((course) => (
-                        <option key={course.id} value={course.id}>
-                          {course.name}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-                
-                {/* Quick Stats */}
+              {/* Quick Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-blue-50 p-6 rounded-lg shadow-md">
                   <h3 className="text-sm font-semibold text-blue-800 mb-2">Total Students</h3>
                   <p className="text-2xl font-bold text-blue-600">
-                    {allStudents.filter(s => user && s.lecturerId === user.uid).length}
+                    {allStudents.filter(s => user && s.teacherId === user.uid).length}
                   </p>
                 </div>
                 <div className="bg-green-50 p-6 rounded-lg shadow-md">
-                  <h3 className="text-sm font-semibold text-green-800 mb-2">Active Assignments</h3>
+                  <h3 className="text-sm font-semibold text-green-800 mb-2">Resources Uploaded</h3>
                   <p className="text-2xl font-bold text-green-600">
+                    {resources.filter(r => user && r.uploadedBy === userData?.name).length}
+                  </p>
+                </div>
+                <div className="bg-purple-50 p-6 rounded-lg shadow-md">
+                  <h3 className="text-sm font-semibold text-purple-800 mb-2">Active Assignments</h3>
+                  <p className="text-2xl font-bold text-purple-600">
                     {selectedCourseId ? 
                       allCourses.find(c => c.id === selectedCourseId)?.assignments.length || 0
                       : 0
@@ -1116,207 +1126,251 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {selectedCourseId && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Left Column */}
-                  <div className="space-y-6">
-                  {/* Create Assignment */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Left Column */}
+                <div className="space-y-6">
+                  {/* Resource Management */}
+                  <div className="bg-white p-6 rounded-lg shadow-md mb-6">
                     <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Create Assignment
+                      Upload Resources
                     </h3>
-                    <AssignmentForm
-                      courseId={selectedCourseId}
-                      onAddAssignment={(title, description, points) =>
-                        handleAddAssignment(selectedCourseId!, title, description, points)
-                      }
-                    />
+                    <form onSubmit={handleResourceUpload} className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4">
+                        <input
+                          type="text"
+                          placeholder="Resource Title"
+                          value={newResource.title || ''}
+                          onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        />
+                        <select
+                          value={newResource.type || 'video'}
+                          onChange={(e) => setNewResource({ ...newResource, type: e.target.value as 'video' | 'pdf' | 'link' })}
+                          className="p-2 border rounded"
+                          required
+                        >
+                          <option value="video">YouTube Video</option>
+                          <option value="pdf">PDF Document</option>
+                          <option value="link">External Link</option>
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Resource URL"
+                          value={newResource.url || ''}
+                          onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        />
+                        <textarea
+                          placeholder="Resource Description"
+                          value={newResource.description || ''}
+                          onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
+                          className="p-2 border rounded"
+                          rows={3}
+                          required
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                      >
+                        Upload Resource
+                      </button>
+                    </form>
                   </div>
 
-                  {/* View and Grade Assignments */}
+                  {/* Grade Management */}
                   <div className="bg-white p-6 rounded-lg shadow-md">
                     <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Assignments
+                      Manage Grades
+                    </h3>
+                    <form onSubmit={handleGradeSubmit} className="space-y-4">
+                      <div className="grid grid-cols-1 gap-4">
+                        <select
+                          value={newGrade.studentId || ''}
+                          onChange={(e) => setNewGrade({ ...newGrade, studentId: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        >
+                          <option value="">Select Student</option>
+                          {allStudents
+                            .filter(s => user && s.teacherId === user.uid)
+                            .map(student => (
+                              <option key={student.id} value={student.id}>
+                                {student.name}
+                              </option>
+                            ))}
+                        </select>
+                        <input
+                          type="text"
+                          placeholder="Course Code"
+                          value={newGrade.courseCode || ''}
+                          onChange={(e) => setNewGrade({ ...newGrade, courseCode: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Course Name"
+                          value={newGrade.courseName || ''}
+                          onChange={(e) => setNewGrade({ ...newGrade, courseName: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        />
+                        <input
+                          type="number"
+                          placeholder="Mark (0-100)"
+                          value={newGrade.mark || ''}
+                          onChange={(e) => setNewGrade({ ...newGrade, mark: parseInt(e.target.value) })}
+                          min="0"
+                          max="100"
+                          className="p-2 border rounded"
+                          required
+                        />
+                        <select
+                          value={newGrade.grade || ''}
+                          onChange={(e) => setNewGrade({ ...newGrade, grade: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        >
+                          <option value="">Select Grade</option>
+                          <option value="A+">A+</option>
+                          <option value="A">A</option>
+                          <option value="A-">A-</option>
+                          <option value="B+">B+</option>
+                          <option value="B">B</option>
+                          <option value="B-">B-</option>
+                          <option value="C+">C+</option>
+                          <option value="C">C</option>
+                          <option value="C-">C-</option>
+                          <option value="D+">D+</option>
+                          <option value="D">D</option>
+                          <option value="F">F</option>
+                        </select>
+                        <input
+                          type="number"
+                          placeholder="Credits"
+                          value={newGrade.credits || ''}
+                          onChange={(e) => setNewGrade({ ...newGrade, credits: parseInt(e.target.value) })}
+                          min="1"
+                          className="p-2 border rounded"
+                          required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Semester (e.g., Fall 2023)"
+                          value={newGrade.semester || ''}
+                          onChange={(e) => setNewGrade({ ...newGrade, semester: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                      >
+                        Submit Grade
+                      </button>
+                    </form>
+                  </div>
+                </div>
+
+                {/* Right Column */}
+                <div className="space-y-6">
+                  {/* Student Progress */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Student Progress
+                    </h3>
+                    <div className="space-y-4">
+                      {allStudents
+                        .filter(s => user && s.teacherId === user.uid)
+                        .map(student => (
+                          <div key={student.id} className="p-4 bg-gray-50 rounded">
+                            <h4 className="font-medium text-blue-800">{student.name}</h4>
+                            <div className="mt-2 text-sm text-gray-600">
+                              <p>Assignments Completed: {student.grades ? Object.keys(student.grades).length : 0}</p>
+                              <p>Average Grade: {
+                                student.grades ?
+                                  Object.values(student.grades).length > 0 ?
+                                    (Object.values(student.grades).reduce((a, b) => a + b, 0) / Object.values(student.grades).length).toFixed(1)
+                                    : 'N/A'
+                                  : 'N/A'
+                              }</p>
+                            </div>
+                          </div>
+                        ))
+                      }
+                    </div>
+                  </div>
+
+                  {/* Course Announcements */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Course Announcements
+                    </h3>
+                    <div className="space-y-4">
+                      <textarea
+                        className="w-full p-2 border rounded text-blue-800 mb-2"
+                        placeholder="Write an announcement..."
+                        rows={3}
+                      />
+                      <button
+                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
+                        onClick={() => {
+                          // TODO: Implement announcement functionality
+                          alert('Announcement feature coming soon!');
+                        }}
+                      >
+                        Post Announcement
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* View Resources */}
+                  <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                      Course Resources
                     </h3>
                     {(() => {
-                      const course = allCourses.find(
-                        (c) => c.id === selectedCourseId
-                      );
-                      return course && course.assignments.length ? (
-                        <>
-                          {course.assignments.map((assignment) => (
-                            <div
-                              key={assignment.id}
-                              className="p-4 bg-gray-50 rounded mb-4"
-                            >
-                              <h4 className="text-md font-medium text-blue-800">
-                                {assignment.title}
-                              </h4>
-                              <p className="text-blue-800">
-                                {assignment.description || "No description"}
-                              </p>
-                              <p className="text-blue-800">
-                                Points: {assignment.points}
-                              </p>
-                              <div className="mt-2">
-                                <select
-                                  onChange={(e) => {
-                                    const studentId = e.target.value;
-                                    if (studentId) {
-                                      const grade = prompt(
-                                        "Enter grade (0-100)"
-                                      );
-                                      if (
-                                        grade &&
-                                        !isNaN(parseInt(grade)) &&
-                                        parseInt(grade) >= 0 &&
-                                        parseInt(grade) <= 100
-                                      ) {
-                                        handleGradeAssignment(
-                                          studentId,
-                                          selectedCourseId!,
-                                          assignment.id,
-                                          parseInt(grade)
-                                        );
-                                      } else if (grade) {
-                                        alert(
-                                          "Please enter a valid grade (0-100)."
-                                        );
-                                      }
-                                    }
-                                  }}
-                                  className="p-2 border rounded text-blue-800"
-                                  defaultValue=""
+                      const course = allCourses.find(c => c.id === selectedCourseId);
+                      return course && course.resources && course.resources.length ? (
+                        <div className="space-y-4">
+                          {course.resources.map((resource, index) => (
+                            <div key={index} className="p-4 bg-gray-50 rounded">
+                              <h4 className="font-medium text-blue-800">{resource.title}</h4>
+                              <p className="text-sm text-gray-600">{resource.description}</p>
+                              <div className="mt-2 flex items-center space-x-2">
+                                <a
+                                  href={resource.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-blue-600 hover:text-blue-800"
                                 >
-                                  <option value="">Select a Student</option>
-                                  {allStudents
-                                    .filter(
-                                      (s) => user && s.lecturerId === user.uid
-                                    )
-                                    .map((s) => (
-                                      <option key={s.id} value={s.id}>
-                                        {s.name}
-                                      </option>
-                                    ))}
-                                </select>
+                                  View Resource
+                                </a>
+                                <span className="text-gray-400">|</span>
+                                <button
+                                  className="text-red-600 hover:text-red-800"
+                                  onClick={() => {
+                                    // TODO: Implement delete functionality
+                                    alert('Delete feature coming soon!');
+                                  }}
+                                >
+                                  Delete
+                                </button>
                               </div>
                             </div>
                           ))}
-                        </>
+                        </div>
                       ) : (
-                        <p className="text-blue-800">No assignments available.</p>
+                        <p className="text-blue-800">No resources available.</p>
                       );
                     })()}
                   </div>
-
-                  {/* Add Resource */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Add Resource
-                    </h3>
-                    <ResourceForm
-                      courseId={selectedCourseId}
-                      onAddResource={handleAddResource}
-                    />
-                  </div>
-                  </div>
-
-                  {/* Right Column */}
-                  <div className="space-y-6">
-                    {/* Student Progress */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                      <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                        Student Progress
-                      </h3>
-                      <div className="space-y-4">
-                        {allStudents
-                          .filter(s => user && s.lecturerId === user.uid)
-                          .map(student => (
-                            <div key={student.id} className="p-4 bg-gray-50 rounded">
-                              <h4 className="font-medium text-blue-800">{student.name}</h4>
-                              <div className="mt-2 text-sm text-gray-600">
-                                <p>Assignments Completed: {student.grades ? Object.keys(student.grades).length : 0}</p>
-                                <p>Average Grade: {
-                                  student.grades ?
-                                    Object.values(student.grades).length > 0 ?
-                                      (Object.values(student.grades).reduce((a, b) => a + b, 0) / Object.values(student.grades).length).toFixed(1)
-                                      : 'N/A'
-                                    : 'N/A'
-                                }</p>
-                              </div>
-                            </div>
-                          ))
-                        }
-                      </div>
-                    </div>
-
-                    {/* Course Announcements */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                      <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                        Course Announcements
-                      </h3>
-                      <div className="space-y-4">
-                        <textarea
-                          className="w-full p-2 border rounded text-blue-800 mb-2"
-                          placeholder="Write an announcement..."
-                          rows={3}
-                        />
-                        <button
-                          className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                          onClick={() => {
-                            // TODO: Implement announcement functionality
-                            alert('Announcement feature coming soon!');
-                          }}
-                        >
-                          Post Announcement
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* View Resources */}
-                    <div className="bg-white p-6 rounded-lg shadow-md">
-                      <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                        Course Resources
-                      </h3>
-                      {(() => {
-                        const course = allCourses.find(c => c.id === selectedCourseId);
-                        return course && course.resources && course.resources.length ? (
-                          <div className="space-y-4">
-                            {course.resources.map((resource, index) => (
-                              <div key={index} className="p-4 bg-gray-50 rounded">
-                                <h4 className="font-medium text-blue-800">{resource.title}</h4>
-                                <p className="text-sm text-gray-600">{resource.description}</p>
-                                <div className="mt-2 flex items-center space-x-2">
-                                  <a
-                                    href={resource.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-600 hover:text-blue-800"
-                                  >
-                                    View Resource
-                                  </a>
-                                  <span className="text-gray-400">|</span>
-                                  <button
-                                    className="text-red-600 hover:text-red-800"
-                                    onClick={() => {
-                                      // TODO: Implement delete functionality
-                                      alert('Delete feature coming soon!');
-                                    }}
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-blue-800">No resources available.</p>
-                        );
-                      })()}
-                    </div>
-                  </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -1382,15 +1436,11 @@ export default function Dashboard() {
                       required
                     />
                     <select
-                      value={newResource.type || undefined}
-                      onChange={(e) => {
-                        const value = e.target.value ? (e.target.value as 'video' | 'pdf' | 'link') : undefined;
-                        setNewResource({ ...newResource, type: value });
-                      }}
+                      value={newResource.type || 'video'}
+                      onChange={(e) => setNewResource({ ...newResource, type: e.target.value as 'video' | 'pdf' | 'link' })}
                       className="p-2 border rounded"
                       required
                     >
-                      <option value="">Select Type</option>
                       <option value="video">YouTube Video</option>
                       <option value="pdf">PDF Document</option>
                       <option value="link">External Link</option>
@@ -1534,43 +1584,6 @@ export default function Dashboard() {
                   </button>
                 </form>
               </div>
-
-              {/* Student Grade Display */}
-              {(role as Role) === "student" && (
-                <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-                  <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                    My Grades
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-blue-800 text-white">
-                          <th className="p-2 border">Course Code</th>
-                          <th className="p-2 border">Course Name</th>
-                          <th className="p-2 border">Mark (%)</th>
-                          <th className="p-2 border">Grade</th>
-                          <th className="p-2 border">Credits</th>
-                          <th className="p-2 border">Quality Points</th>
-                          <th className="p-2 border">Comments</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {studentData?.grades && Object.entries(studentData.grades).map(([key, grade]) => (
-                          <tr key={key} className="hover:bg-gray-50">
-                            <td className="p-2 border">{key.split('_')[0]}</td>
-                            <td className="p-2 border">-</td>
-                            <td className="p-2 border">{grade}</td>
-                            <td className="p-2 border">-</td>
-                            <td className="p-2 border">-</td>
-                            <td className="p-2 border">-</td>
-                            <td className="p-2 border">-</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
 
               {/* Manage Students */}
               <div className="bg-white p-6 rounded-lg shadow-md">
