@@ -416,46 +416,52 @@ export default function Dashboard() {
       }
 
       if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
-        const studentsSnapshot = await getDocs(collection(db, "students"));
-        const studentsList = studentsSnapshot.docs.map((studentDoc) => ({
-          id: studentDoc.id,
-          ...studentDoc.data(),
-          transactions: studentDoc.data().transactions || [],
-          notifications: studentDoc.data().notifications || [],
-          grades: studentDoc.data().grades || {},
-          clearance: studentDoc.data().clearance ?? false,
-          courses: studentDoc.data().courses || [],
-          totalOwed: studentDoc.data().totalOwed || 0,
-          totalPaid: studentDoc.data().totalPaid || 0,
-          balance: studentDoc.data().balance || 0,
-          paymentStatus: studentDoc.data().paymentStatus || "Unpaid",
-        })) as StudentData[];
-        setAllStudents(studentsList);
+        try {
+          const studentsSnapshot = await getDocs(collection(db, "students"));
+          const studentsList = studentsSnapshot.docs.map((studentDoc) => ({
+            id: studentDoc.id,
+            ...studentDoc.data(),
+            transactions: studentDoc.data().transactions || [],
+            notifications: studentDoc.data().notifications || [],
+            grades: studentDoc.data().grades || {},
+            clearance: studentDoc.data().clearance ?? false,
+            courses: studentDoc.data().courses || [],
+            totalOwed: studentDoc.data().totalOwed || 0,
+            totalPaid: studentDoc.data().totalPaid || 0,
+            balance: studentDoc.data().balance || 0,
+            paymentStatus: studentDoc.data().paymentStatus || "Unpaid",
+          })) as StudentData[];
+          console.log("Fetched students:", studentsList); // Debug log
+          setAllStudents(studentsList);
 
-        const teachersList: User[] = [];
-        for (const student of studentsList) {
-          if (student.teacherId) {
-            try {
-              const teacherDocRef = doc(db, "users", student.teacherId);
-              const teacherSnap = await getDoc(teacherDocRef);
-              if (teacherSnap.exists() && teacherSnap.data().role === "teacher") {
-                teachersList.push({
-                  id: teacherSnap.id,
-                  ...teacherSnap.data(),
-                } as User);
+          const teachersList: User[] = [];
+          for (const student of studentsList) {
+            if (student.teacherId) {
+              try {
+                const teacherDocRef = doc(db, "users", student.teacherId);
+                const teacherSnap = await getDoc(teacherDocRef);
+                if (teacherSnap.exists() && teacherSnap.data().role === "teacher") {
+                  teachersList.push({
+                    id: teacherSnap.id,
+                    ...teacherSnap.data(),
+                  } as User);
+                }
+              } catch (err) {
+                console.warn(`Failed to fetch teacher ${student.teacherId}:`, err);
               }
-            } catch (err) {
-              console.warn(`Failed to fetch teacher ${student.teacherId}:`, err);
             }
           }
-        }
-        setAllTeachers(teachersList);
+          setAllTeachers(teachersList);
 
-        if (fetchedUserData.role === "teacher" && studentsList.length > 0) {
-          const assignedStudent = studentsList.find(
-            (s) => s.teacherId === currentUser.uid
-          );
-          setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
+          if (fetchedUserData.role === "teacher" && studentsList.length > 0) {
+            const assignedStudent = studentsList.find(
+              (s) => s.teacherId === currentUser.uid
+            );
+            setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
+          }
+        } catch (err) {
+          console.error("Failed to fetch students:", err);
+          setError("Failed to load student data.");
         }
       }
 
@@ -669,8 +675,8 @@ export default function Dashboard() {
   ) => {
     if (role !== "teacher" || !user) return;
     const student = allStudents.find((s) => s.id === studentId);
-    if (!student || student.teacherId !== user.uid) {
-      alert("You can only grade assignments for students assigned to you.");
+    if (!student) {
+      alert("Student not found.");
       return;
     }
     try {
@@ -1106,7 +1112,7 @@ export default function Dashboard() {
                 <div className="bg-blue-50 p-6 rounded-lg shadow-md">
                   <h3 className="text-sm font-semibold text-blue-800 mb-2">Total Students</h3>
                   <p className="text-2xl font-bold text-blue-600">
-                    {allStudents.filter(s => user && s.teacherId === user.uid).length}
+                    {allStudents.length}
                   </p>
                 </div>
                 <div className="bg-green-50 p-6 rounded-lg shadow-md">
@@ -1194,13 +1200,15 @@ export default function Dashboard() {
                           required
                         >
                           <option value="">Select Student</option>
-                          {allStudents
-                            .filter(s => user && s.teacherId === user.uid)
-                            .map(student => (
+                          {allStudents.length > 0 ? (
+                            allStudents.map(student => (
                               <option key={student.id} value={student.id}>
                                 {student.name}
                               </option>
-                            ))}
+                            ))
+                          ) : (
+                            <option value="" disabled>No students available</option>
+                          )}
                         </select>
                         <input
                           type="text"
@@ -1284,9 +1292,8 @@ export default function Dashboard() {
                       Student Progress
                     </h3>
                     <div className="space-y-4">
-                      {allStudents
-                        .filter(s => user && s.teacherId === user.uid)
-                        .map(student => (
+                      {allStudents.length > 0 ? (
+                        allStudents.map(student => (
                           <div key={student.id} className="p-4 bg-gray-50 rounded">
                             <h4 className="font-medium text-blue-800">{student.name}</h4>
                             <div className="mt-2 text-sm text-gray-600">
@@ -1301,7 +1308,9 @@ export default function Dashboard() {
                             </div>
                           </div>
                         ))
-                      }
+                      ) : (
+                        <p className="text-blue-800">No students available.</p>
+                      )}
                     </div>
                   </div>
 
