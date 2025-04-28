@@ -7,12 +7,12 @@ import {
   signOut,
 } from "firebase/auth";
 import {
-  doc,
-  getDoc,
-  getDocs,
   collection,
   query,
   where,
+  getDocs,
+  getDoc,
+  doc,
   updateDoc,
   addDoc,
   deleteDoc,
@@ -84,6 +84,7 @@ interface Resource {
   uploadedBy: string;
   uploadedAt: Date;
   courseCode?: string;
+  recipientId?: string; // Added for student-specific resources
 }
 
 interface Grade {
@@ -431,7 +432,6 @@ export default function Dashboard() {
             balance: studentDoc.data().balance || 0,
             paymentStatus: studentDoc.data().paymentStatus || "Unpaid",
           })) as StudentData[];
-          console.log("Fetched students:", studentsList); // Debug log
           setAllStudents(studentsList);
 
           const teachersList: User[] = [];
@@ -495,24 +495,21 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, [user, router, fetchData]);
 
-  const fetchResources = async () => {
+  const fetchResources = async (studentId?: string) => {
     try {
-      const coursesSnapshot = await getDocs(collection(db, "courses"));
-      const allResources: Resource[] = [];
-      for (const courseDoc of coursesSnapshot.docs) {
-        const resourcesSnapshot = await getDocs(
-          collection(db, "courses", courseDoc.id, "resources")
-        );
-        const courseResources = resourcesSnapshot.docs.map(
-          (doc) => ({
-            id: doc.id,
-            ...doc.data(),
-            uploadedAt: doc.data().uploadedAt?.toDate() || new Date(),
-          }) as Resource
-        );
-        allResources.push(...courseResources);
-      }
-      setResources(allResources);
+      const resourcesSnapshot = await getDocs(collection(db, "resources"));
+      const allResources = resourcesSnapshot.docs.map(
+        (doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          uploadedAt: doc.data().uploadedAt?.toDate() || new Date(),
+        }) as Resource
+      );
+      // Filter resources for the specific student if studentId is provided
+      const filteredResources = studentId
+        ? allResources.filter((r) => r.recipientId === studentId)
+        : allResources;
+      setResources(filteredResources);
     } catch (error) {
       console.error('Error fetching resources:', error);
     }
@@ -520,18 +517,35 @@ export default function Dashboard() {
 
   const handleResourceUpload = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newResource.title || !newResource.type || !newResource.url || !newResource.description) {
-      alert('Please fill in all required fields');
+    if (!newResource.title || !newResource.type || !newResource.url || !newResource.description || (!newResource.recipientId && role === "teacher")) {
+      alert('Please fill in all required fields, including selecting a student if you are a teacher.');
       return;
     }
 
     try {
       const resourceRef = collection(db, 'resources');
-      await addDoc(resourceRef, {
+      const resourceData = {
         ...newResource,
         uploadedBy: userData?.name || 'Unknown',
-        uploadedAt: new Date()
-      });
+        uploadedAt: new Date(),
+        id: uuidv4(),
+      };
+      await addDoc(resourceRef, resourceData);
+
+      // Notify the student
+      const studentRef = doc(db, "students", newResource.recipientId || "");
+      const studentSnap = await getDoc(studentRef);
+      if (studentSnap.exists()) {
+        const studentData = studentSnap.data();
+        const notifications = studentData.notifications || [];
+        notifications.push({
+          id: uuidv4(),
+          message: `New resource uploaded: ${newResource.title}`,
+          date: new Date().toISOString(),
+          read: false,
+        });
+        await updateDoc(studentRef, { notifications });
+      }
 
       setNewResource({
         title: '',
@@ -539,8 +553,9 @@ export default function Dashboard() {
         url: '',
         description: '',
         courseCode: '',
+        recipientId: '',
       });
-      fetchResources();
+      fetchResources(role === "student" ? user?.uid : undefined);
       alert('Resource uploaded successfully');
     } catch (error) {
       console.error('Error uploading resource:', error);
@@ -848,6 +863,7 @@ export default function Dashboard() {
     url: '',
     description: '',
     courseCode: '',
+    recipientId: '',
   });
   const [newGrade, setNewGrade] = useState<Partial<Grade>>({
     studentId: '',
@@ -861,8 +877,8 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    fetchResources();
-  }, []);
+    fetchResources(role === "student" ? user?.uid : undefined);
+  }, [role, user]);
 
   if (isLoading) {
     return (
@@ -1049,55 +1065,35 @@ export default function Dashboard() {
                   {/* Resources */}
                   <div className="bg-white p-6 rounded-lg shadow-md">
                     <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Course Resources
+                      Your Resources
                     </h3>
-                    <select
-                      value={selectedCourseId || ""}
-                      onChange={(e) => setSelectedCourseId(e.target.value)}
-                      className="w-full p-2 border rounded text-blue-800 mb-4"
-                    >
-                      <option value="">Select a Course</option>
-                      {studentData.courses.map((course) => (
-                        <option key={course.id} value={course.id}>
-                          {course.name}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedCourseId ? (
-                      (() => {
-                        const course = allCourses.find(
-                          (c) => c.id === selectedCourseId
-                        );
-                        return course && course.resources.length > 0 ? (
-                          <ul className="space-y-2">
-                            {course.resources.map((resource) => (
-                              <li key={resource.id} className="text-blue-800">
-                                <a
-                                  href={resource.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="hover:underline"
-                                >
-                                  {resource.title} ({resource.type})
-                                </a>{" "}
-                                - Uploaded:{" "}
-                                {new Date(
-                                  resource.uploadedAt
-                                ).toLocaleString()}
-                              </li>
-                            ))}
-                          </ul>
-                        ) : (
-                          <p className="text-blue-800">
-                            No resources available.
-                          </p>
-                        );
-                      })()
-                    ) : (
-                      <p className="text-blue-800">
-                        Please select a course to view resources.
-                      </p>
-                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {resources.length > 0 ? (
+                        resources.map((resource) => (
+                          <div key={resource.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+                            <h4 className="font-semibold text-blue-800">{resource.title}</h4>
+                            <p className="text-sm text-gray-600 mb-2">
+                              {resource.courseCode && <span className="font-semibold">[{resource.courseCode}] </span>}
+                              {resource.type.toUpperCase()}
+                            </p>
+                            <p className="text-sm mb-2">{resource.description}</p>
+                            <a
+                              href={resource.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:underline"
+                            >
+                              Access Resource
+                            </a>
+                            <p className="text-xs text-gray-500 mt-2">
+                              Uploaded by {resource.uploadedBy} on {new Date(resource.uploadedAt).toLocaleDateString()}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-blue-800">No resources available.</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1142,6 +1138,23 @@ export default function Dashboard() {
                     </h3>
                     <form onSubmit={handleResourceUpload} className="space-y-4">
                       <div className="grid grid-cols-1 gap-4">
+                        <select
+                          value={newResource.recipientId || ''}
+                          onChange={(e) => setNewResource({ ...newResource, recipientId: e.target.value })}
+                          className="p-2 border rounded"
+                          required
+                        >
+                          <option value="">Select Student</option>
+                          {allStudents.length > 0 ? (
+                            allStudents.map(student => (
+                              <option key={student.id} value={student.id}>
+                                {student.name}
+                              </option>
+                            ))
+                          ) : (
+                            <option value="" disabled>No students available</option>
+                          )}
+                        </select>
                         <input
                           type="text"
                           placeholder="Resource Title"
@@ -1167,6 +1180,13 @@ export default function Dashboard() {
                           onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
                           className="p-2 border rounded"
                           required
+                        />
+                        <input
+                          type="text"
+                          placeholder="Course Code (optional)"
+                          value={newResource.courseCode || ''}
+                          onChange={(e) => setNewResource({ ...newResource, courseCode: e.target.value })}
+                          className="p-2 border rounded"
                         />
                         <textarea
                           placeholder="Resource Description"
@@ -1328,7 +1348,6 @@ export default function Dashboard() {
                       <button
                         className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
                         onClick={() => {
-                          // TODO: Implement announcement functionality
                           alert('Announcement feature coming soon!');
                         }}
                       >
@@ -1363,7 +1382,6 @@ export default function Dashboard() {
                                 <button
                                   className="text-red-600 hover:text-red-800"
                                   onClick={() => {
-                                    // TODO: Implement delete functionality
                                     alert('Delete feature coming soon!');
                                   }}
                                 >
@@ -1436,6 +1454,17 @@ export default function Dashboard() {
                 </h3>
                 <form onSubmit={handleResourceUpload} className="space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <select
+                      value={newResource.recipientId || ''}
+                      onChange={(e) => setNewResource({ ...newResource, recipientId: e.target.value })}
+                      className="p-2 border rounded"
+                      required
+                    >
+                      <option value="">Select Student</option>
+                      {allStudents.map(student => (
+                        <option key={student.id} value={student.id}>{student.name}</option>
+                      ))}
+                    </select>
                     <input
                       type="text"
                       placeholder="Resource Title"
@@ -1456,18 +1485,18 @@ export default function Dashboard() {
                     </select>
                     <input
                       type="text"
+                      placeholder="Course Code (optional)"
+                      value={newResource.courseCode || ''}
+                      onChange={(e) => setNewResource({ ...newResource, courseCode: e.target.value })}
+                      className="p-2 border rounded"
+                    />
+                    <input
+                      type="text"
                       placeholder="Resource URL"
                       value={newResource.url || ''}
                       onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
                       className="p-2 border rounded"
                       required
-                    />
-                    <input
-                      type="text"
-                      placeholder="Course Code (optional)"
-                      value={newResource.courseCode || ''}
-                      onChange={(e) => setNewResource({ ...newResource, courseCode: e.target.value })}
-                      className="p-2 border rounded"
                     />
                     <textarea
                       placeholder="Description"
@@ -1761,20 +1790,6 @@ export default function Dashboard() {
                               Clearance: {student.clearance ? "Yes" : "No"}
                             </p>
                           </div>
-                          <button
-                            onClick={() =>
-                              student.clearance
-                                ? handleRemoveClearance(student.id)
-                                : handleGrantClearance(student.id)
-                            }
-                            className={`px-2 py-1 rounded text-white ${
-                              student.clearance
-                                ? "bg-green-600 hover:bg-green-700"
-                                : "bg-red-600 hover:bg-red-700"
-                            }`}
-                          >
-                            {student.clearance ? "Revoke" : "Grant"}
-                          </button>
                         </div>
                       ))
                     ) : (
