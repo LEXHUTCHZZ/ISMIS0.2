@@ -84,7 +84,7 @@ interface Resource {
   uploadedBy: string;
   uploadedAt: Date;
   courseCode?: string;
-  recipientId?: string; // Added for student-specific resources
+  recipientId?: string;
 }
 
 interface Grade {
@@ -505,7 +505,6 @@ export default function Dashboard() {
           uploadedAt: doc.data().uploadedAt?.toDate() || new Date(),
         }) as Resource
       );
-      // Filter resources for the specific student if studentId is provided
       const filteredResources = studentId
         ? allResources.filter((r) => r.recipientId === studentId)
         : allResources;
@@ -532,7 +531,6 @@ export default function Dashboard() {
       };
       await addDoc(resourceRef, resourceData);
 
-      // Notify the student
       const studentRef = doc(db, "students", newResource.recipientId || "");
       const studentSnap = await getDoc(studentRef);
       if (studentSnap.exists()) {
@@ -1448,7 +1446,7 @@ export default function Dashboard() {
               </div>
 
               {/* Resource Management */}
-              <div className="bg-white p-6 rounded-lg shadow-md mb-6">
+              <div className="bg-English p-6 rounded-lg shadow-md mb-6">
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
                   Upload Resources
                 </h3>
@@ -1796,6 +1794,116 @@ export default function Dashboard() {
                       <p className="text-blue-800">No students found.</p>
                     )}
                   </div>
+                )}
+              </div>
+
+              {/* Manage Student Clearances */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Manage Student Clearances
+                </h3>
+                {allStudents.length > 0 ? (
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="bg-blue-800 text-white">
+                        <th className="p-2 border">Name</th>
+                        <th className="p-2 border">Email</th>
+                        <th className="p-2 border">Balance</th>
+                        <th className="p-2 border">Clearance</th>
+                        <th className="p-2 border">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allStudents.map((student) => (
+                        <tr key={student.id}>
+                          <td className="p-2 border text-blue-800">
+                            {student.name}
+                          </td>
+                          <td className="p-2 border text-blue-800">
+                            {student.email}
+                          </td>
+                          <td className="p-2 border text-blue-800">
+                            {student.balance.toLocaleString()} JMD
+                          </td>
+                          <td className="p-2 border text-blue-800">
+                            {student.clearance ? "Yes" : "No"}
+                          </td>
+                          <td className="p-2 border">
+                            <button
+                              onClick={() =>
+                                student.clearance
+                                  ? handleRemoveClearance(student.id)
+                                  : handleGrantClearance(student.id)
+                              }
+                              className={`px-2 py-1 rounded text-white ${
+                                student.clearance
+                                  ? "bg-red-600 hover:bg-red-700"
+                                  : "bg-green-600 hover:bg-green-700"
+                              }`}
+                            >
+                              {student.clearance ? "Revoke" : "Grant"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-blue-800">No students available.</p>
+                )}
+              </div>
+
+              {/* Payment History */}
+              <div className="bg-white p-6 rounded-lg shadow-md">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4">
+                  Payment History
+                </h3>
+                <select
+                  value={selectedStudentId || ""}
+                  onChange={(e) => setSelectedStudentId(e.target.value)}
+                  className="w-full p-2 border rounded text-blue-800 mb-4"
+                >
+                  <option value="">Select a Student</option>
+                  {allStudents.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.name}
+                    </option>
+                  ))}
+                </select>
+                {selectedStudentId && (
+                  (() => {
+                    const student = allStudents.find(
+                      (s) => s.id === selectedStudentId
+                    );
+                    return student && student.transactions.length > 0 ? (
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-blue-800 text-white">
+                            <th className="p-2 border">Date</th>
+                            <th className="p-2 border">Amount</th>
+                            <th className="p-2 border">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {student.transactions.map((txn) => (
+                            <tr key={txn.id}>
+                              <td className="p-2 border text-blue-800">
+                                {new Date(txn.date).toLocaleString()}
+                              </td>
+                              <td className="p-2 border text-blue-800">
+                                {txn.amount.toLocaleString()} JMD
+                              </td>
+                              <td className="p-2 border text-blue-800">
+                                {txn.status}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p className="text-blue-800">No transactions available.</p>
+                    );
+                  })()
                 )}
               </div>
 
