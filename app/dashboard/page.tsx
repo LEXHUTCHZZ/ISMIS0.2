@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import styles from '../styles/loading.module.css';
 import { auth, db } from "@/lib/firebase";
 import {
   onAuthStateChanged,
@@ -291,6 +292,16 @@ const NotificationList = ({
     )}
   </div>
 );
+
+// Loading Component
+const LoadingScreen = () => {
+  return (
+    <div className={styles.loadingContainer}>
+      <div className={styles.loader}></div>
+      <div className={styles.loadingText}>Loading your dashboard...</div>
+    </div>
+  );
+};
 
 // Main Dashboard Component
 export default function Dashboard() {
