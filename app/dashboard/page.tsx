@@ -1148,14 +1148,14 @@ export default function Dashboard() {
           <p className="text-lg mb-6 capitalize">{role} Dashboard</p>
 
           <Tabs defaultValue="overview" className="w-full">
-            <TabsList className="mb-4 border-b w-full justify-start overflow-x-auto pb-px">
+            <TabsList className="grid grid-cols-7 w-full mb-6">
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="resources">Resources</TabsTrigger>
-              <TabsTrigger value="assignments">Assignments</TabsTrigger>
-              <TabsTrigger value="finance">Finances</TabsTrigger>
-              <TabsTrigger value="notifications">Notifications</TabsTrigger>
+              <TabsTrigger value="courses">Courses</TabsTrigger>
               <TabsTrigger value="grades">Grades</TabsTrigger>
-              <TabsTrigger value="profile">Profile</TabsTrigger>
+              <TabsTrigger value="assignments">Assignments</TabsTrigger>
+              <TabsTrigger value="attendance">Attendance</TabsTrigger>
+              <TabsTrigger value="materials">Materials</TabsTrigger>
+              <TabsTrigger value="resources">Resources</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview">
@@ -1225,34 +1225,51 @@ export default function Dashboard() {
             </TabsContent>
 
             <TabsContent value="resources">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {allCourses.map((course) => (
-                  <Card key={course.id}>
-                    <CardContent className="p-4">
-                      <h2 className="text-lg font-semibold mb-2">{course.name}</h2>
-                      <p className="text-sm mb-2">Resources: {course.resources?.length || 0}</p>
-                      <p className="text-sm mb-2">Assignments: {course.assignments?.length || 0}</p>
-                      <Link
-                        href={`/courses/${course.id}/materials`}
-                        className="text-blue-400 hover:underline"
-                      >
-                        View Materials
-                      </Link>
-                      <Link
-                        href={`/courses/${course.id}/assignments`}
-                        className="text-blue-400 hover:underline ml-4"
-                      >
-                        View Assignments
-                      </Link>
-                      {role !== "student" && (
-                        <>
-                          <ResourceForm courseId={course.id} onAddResource={handleAddResource} />
-                          <AssignmentForm courseId={course.id} onAddAssignment={(title, description, points) => handleAddAssignment(course.id, title, description, points)} />
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Learning Resources</h2>
+                  <Link 
+                    href="/assignments" 
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  >
+                    View Assignments
+                  </Link>
+                </div>
+                
+                {/* Coming Soon Notice */}
+                <div className="bg-amber-100 dark:bg-amber-900 border-l-4 border-amber-500 p-4 mb-6 rounded-md">
+                  <p className="text-amber-700 dark:text-amber-300 font-bold">Coming Soon - Future Update</p>
+                  <p className="text-amber-700 dark:text-amber-300">
+                    Enhanced resource management features are under development.
+                  </p>
+                </div>
+                
+                {/* Resources Categories */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-center hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                    <div className="mb-2 text-blue-600 dark:text-blue-400">
+                      <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Textbooks</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">Access digital textbooks</p>
+                  </div>
+                  
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-center hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                    <div className="mb-2 text-blue-600 dark:text-blue-400">
+                      <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"></path></svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Video Lectures</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">Watch course video lectures</p>
+                  </div>
+                  
+                  <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg text-center hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors cursor-pointer">
+                    <div className="mb-2 text-blue-600 dark:text-blue-400">
+                      <svg className="w-8 h-8 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-white">Practice Tests</h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-300">Take practice exams</p>
+                  </div>
+                </div>
               </div>
             </TabsContent>
 
@@ -1352,7 +1369,7 @@ export default function Dashboard() {
                   </CardContent>
                 </Card>
               )}
-              {role === "teacher" && (
+              {role.toLowerCase() === "teacher" && (
                 <Card>
                   <CardContent className="p-4">
                     <h2 className="text-lg font-semibold mb-4">Grade Assignments</h2>
@@ -1378,25 +1395,115 @@ export default function Dashboard() {
               )}
             </TabsContent>
 
+            <TabsContent value="attendance">
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Attendance</h2>
+                <p className="text-gray-600 dark:text-gray-300 mb-4">Attendance tracking coming soon.</p>
+                
+                {/* Coming Soon Notice */}
+                <div className="bg-amber-100 dark:bg-amber-900 border-l-4 border-amber-500 p-4 rounded-md">
+                  <p className="text-amber-700 dark:text-amber-300 font-bold">Coming Soon - Future Update</p>
+                  <p className="text-amber-700 dark:text-amber-300">
+                    Enhanced attendance tracking features are under development.
+                  </p>
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="materials">
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <div className="flex justify-between items-center mb-6">
+                  <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Learning Materials</h2>
+                  <Link 
+                    href="/materials" 
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                  >
+                    View All Materials
+                  </Link>
+                </div>
+                
+                {/* Coming Soon Notice */}
+                <div className="bg-amber-100 dark:bg-amber-900 border-l-4 border-amber-500 p-4 mb-6 rounded-md">
+                  <p className="text-amber-700 dark:text-amber-300 font-bold">Coming Soon - Future Update</p>
+                  <p className="text-amber-700 dark:text-amber-300">
+                    Enhanced materials management features are under development. Click "View All Materials" for a preview.
+                  </p>
+                </div>
+                
+                {/* Recent Materials Preview */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div className="flex justify-between items-start">
+                      <h3 className="font-semibold text-lg text-gray-800 dark:text-white">Introduction to Programming</h3>
+                      <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs px-2 py-1 rounded">PDF</span>
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">CS101 - A comprehensive guide to programming fundamentals</p>
+                  </div>
+                  
+                  <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <div className="flex justify-between items-start">
+                      <h3 className="font-semibold text-lg text-gray-800 dark:text-white">Data Structures Tutorial</h3>
+                      <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs px-2 py-1 rounded">Video</span>
+                    </div>
+                    <p className="text-gray-600 dark:text-gray-300 text-sm mt-1">CS201 - Video tutorial on data structures</p>
+                  </div>
+                </div>
+              </div>
+            </TabsContent>
+
             <TabsContent value="grades" className="p-4">
               <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
                 <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Gradebook</h2>
                 
-                {/* Show grade entry form only for teachers */}
-                {role === "teacher" && (
+                {/* Student selection for teachers */}
+                {role.toLowerCase() === "teacher" && (
+                  <div className="mb-6 bg-gray-100 dark:bg-gray-700 p-4 rounded-lg">
+                    <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-white">Select Student</h3>
+                    <select
+                      value={selectedStudentId || ""}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                      className="w-full p-2 border rounded mb-2 bg-white dark:bg-gray-600 text-gray-800 dark:text-white border-gray-300 dark:border-gray-500"
+                    >
+                      <option value="">-- Select a student --</option>
+                      {allStudents.map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {student.name}
+                        </option>
+                      ))}
+                    </select>
+                    {!selectedStudentId && (
+                      <p className="text-amber-600 dark:text-amber-400 text-sm">Please select a student to enter grades or view their records</p>
+                    )}
+                  </div>
+                )}
+                
+                {/* Show grade entry form only for teachers and when a student is selected */}
+                {role.toLowerCase() === "teacher" && selectedStudentId && (
                   <div className="mb-8">
-                    <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Enter New Grade</h3>
+                    <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+                      Enter New Grade for {allStudents.find(s => s.id === selectedStudentId)?.name || "Selected Student"}
+                    </h3>
                     <GradeEntryForm 
                       onAddGrade={handleAddGrade}
-                      studentId={selectedStudentId || "student1"} // In production, use actual selected student ID
+                      studentId={selectedStudentId}
                     />
                   </div>
                 )}
                 
-                {/* Show the grades table for everyone */}
+                {/* Show the grades table - for students their own grades, for teachers the selected student's grades */}
                 <div>
-                  <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Student Grades</h3>
-                  <GradesTable grades={grades} />
+                  <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
+                    {role.toLowerCase() === "teacher" && selectedStudentId 
+                      ? `Grades for ${allStudents.find(s => s.id === selectedStudentId)?.name || "Selected Student"}` 
+                      : "Your Grades"}
+                  </h3>
+                  <GradesTable grades={
+                    role.toLowerCase() === "student" 
+                      ? grades.filter(g => g.studentId === userData?.id) 
+                      : selectedStudentId 
+                        ? grades.filter(g => g.studentId === selectedStudentId)
+                        : grades
+                  } />
                 </div>
               </div>
             </TabsContent>
