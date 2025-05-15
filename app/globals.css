@@ -2,21 +2,10 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #111827;
-  --text-primary: #e5e7eb;
-  --text-secondary: #9ca3af;
-  --accent-primary: #3b82f6;
-  --accent-secondary: #60a5fa;
-  --border-color: #374151;
-}
-
 body {
-  background-color: var(--background);
-  color: var(--text-primary);
+  background-color: #FFFFFF; /* White */
+  color: #7F1D1D; /* Red */
   font-family: Arial, Helvetica, sans-serif;
-  min-height: 100vh;
-  transition: background-color 0.3s ease;
 }
 
 /* Raw CSS for table inputs and cells */
@@ -25,80 +14,16 @@ table select {
   min-width: 60px;
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid var(--border-color);
+  border: 1px solid #7F1D1D;
   border-radius: 4px;
   padding: 4px;
-  color: var(--text-primary);
-  background-color: rgba(255, 255, 255, 0.05);
+  color: #7F1D1D;
 }
 
 table th,
 table td {
   text-align: center;
   vertical-align: middle;
-  border: 1px solid var(--border-color);
+  border: 1px solid #7F1D1D;
   padding: 8px;
-  background-color: rgba(255, 255, 255, 0.02);
-}
-
-/* Dark theme card styles */
-.card {
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1rem;
-  transition: transform 0.2s ease;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-}
-
-/* Button styles */
-.btn {
-  background-color: var(--accent-primary);
-  color: var(--text-primary);
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  border: none;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.btn:hover {
-  background-color: var(--accent-secondary);
-}
-
-/* Input styles */
-input, select, textarea {
-  background-color: rgba(255, 255, 255, 0.05);
-  border: 1px solid var(--border-color);
-  color: var(--text-primary);
-  padding: 0.5rem;
-  border-radius: 4px;
-  outline: none;
-  transition: border-color 0.2s ease;
-}
-
-input:focus, select:focus, textarea:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
-}
-
-/* Navigation styles */
-nav {
-  background-color: rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border-color);
-}
-
-/* Link styles */
-a {
-  color: var(--accent-secondary);
-  text-decoration: none;
-  transition: color 0.2s ease;
-}
-
-a:hover {
-  color: var(--accent-primary);
 }
