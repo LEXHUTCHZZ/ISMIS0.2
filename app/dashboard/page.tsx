@@ -1521,84 +1521,137 @@ export default function Dashboard() {
             </TabsContent>
             
             {role.toLowerCase() === "admin" && (
-              <TabsContent value="admin">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
-                  <div className="flex justify-between items-center mb-6">
-                    <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Administration Panel</h2>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => alert("Backup initiated")}
-                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-                      >
-                        Backup Database
-                      </button>
-                      <button
-                        onClick={() => alert("System settings opening...")}
-                        className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
-                      >
-                        System Settings
-                      </button>
-                    </div>
-                  </div>
+  <TabsContent value="admin">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">Administration Panel</h2>
+        <div className="flex space-x-2">
+          <button
+            onClick={() => alert("Backup initiated")}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+          >
+            Backup Database
+          </button>
+          <button
+            onClick={() => alert("System settings opening...")}
+            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+          >
+            System Settings
+          </button>
+        </div>
+      </div>
 
-                  {/* Admin Navigation Tabs */}
-                  <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
-                    <ul className="flex flex-wrap -mb-px text-sm font-medium text-center">
-                      <li className="mr-2">
-                        <button className="inline-block p-4 border-b-2 border-blue-600 rounded-t-lg active text-blue-600 dark:text-blue-500 dark:border-blue-500">
-                          User Management
-                        </button>
-                      </li>
-                      <li className="mr-2">
-                        <button className="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">
-                          Course Management
-                        </button>
-                      </li>
-                      <li className="mr-2">
-                        <button className="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">
-                          System Reports
-                        </button>
-                      </li>
-                      <li className="mr-2">
-                        <button className="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">
-                          Audit Logs
-                        </button>
-                      </li>
-                    </ul>
-                  </div>
+      {/* Admin Navigation Tabs */}
+      <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
+        <ul className="flex flex-wrap -mb-px text-sm font-medium text-center">
+          <li className="mr-2">
+            <button className="inline-block p-4 border-b-2 border-blue-600 rounded-t-lg active text-blue-600 dark:text-blue-500 dark:border-blue-500">
+              User Management
+            </button>
+          </li>
+          <li className="mr-2">
+            <button className="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">
+              Course Management
+            </button>
+          </li>
+          <li className="mr-2">
+            <button className="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">
+              System Reports
+            </button>
+          </li>
+          <li className="mr-2">
+            <button className="inline-block p-4 border-b-2 border-transparent rounded-t-lg hover:text-gray-600 hover:border-gray-300 dark:hover:text-gray-300">
+              Audit Logs
+            </button>
+          </li>
+        </ul>
+      </div>
 
-                  {/* User Management Section */}
-                  <div className="mb-6">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-xl font-semibold text-gray-800 dark:text-white">User Management</h3>
-                      <button 
-                        className="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors flex items-center"
-                        onClick={() => alert("Add new user modal will open")}
-                      >
-                        <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
-                        </svg>
-                        Add User
-                      </button>
-                    </div>
+      {/* User Management Section */}
+      <div className="mb-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-semibold text-gray-800 dark:text-white">User Management</h3>
+          <button 
+            className="px-3 py-1.5 bg-green-600 text-white text-sm rounded hover:bg-green-700 transition-colors flex items-center"
+            onClick={() => alert("Add new user modal will open")}
+          >
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+            </svg>
+            Add User
+          </button>
+        </div>
 
-                    {/* Search and Filter */}
-                    <div className="flex flex-col md:flex-row gap-4 mb-4">
-                      <div className="flex-grow">
-                        <input
-                          type="text"
-                          placeholder="Search users..."
-                          className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
-                        />
-                      </div>
-                      <div className="flex-shrink-0 flex space-x-2">
-                        <select className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
-                          <option value="">All Roles</option>
-                          <option value="student">Students</option>
-                          <option value="teacher">Teachers</option>
-                          <option value="admin">Admins</option>
-                        </select>
-                        <select className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+        {/* Search and Filter */}
+        <div className="flex flex-col md:flex-row gap-4 mb-4">
+          <div className="flex-grow">
+            <input
+              type="text"
+              placeholder="Search users..."
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white"
+            />
+          </div>
+          <div className="flex-shrink-0 flex space-x-2">
+            <select className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+              <option value="">All Roles</option>
+              <option value="student">Students</option>
+              <option value="teacher">Teachers</option>
+              <option value="admin">Admins</option>
+            </select>
+            <select className="p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-white">
+
+        {/* Clearance Management Section for Accounts Admin */}
+        {role.toLowerCase() === "accountsadmin" && (
+          <div className="mb-8">
+            <h3 className="text-xl font-semibold text-gray-800 dark:text-white mb-4">Clearance Management</h3>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead className="bg-gray-50 dark:bg-gray-700">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Name</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Email</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Clearance</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                  {allStudents.map((student) => (
+                    <tr key={student.id}>
+                      <td className="px-4 py-2 whitespace-nowrap">{student.name}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">{student.email}</td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {student.clearance ? (
+                          <span className="text-green-600 font-bold">Yes</span>
+                        ) : (
+                          <span className="text-red-600 font-bold">No</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        {student.clearance ? (
+                          <button
+                            className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors mr-2"
+                            onClick={() => handleRemoveClearance(student.id)}
+                          >
+                            Revoke
+                          </button>
+                        ) : (
+                          <button
+                            className="px-3 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+                            onClick={() => handleGrantClearance(student.id)}
+                          >
+                            Grant
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+
                           <option value="">All Status</option>
                           <option value="active">Active</option>
                           <option value="inactive">Inactive</option>
