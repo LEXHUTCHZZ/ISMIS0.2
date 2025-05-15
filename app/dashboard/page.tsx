@@ -1828,7 +1828,10 @@ export default function Dashboard() {
                           <tr key={student.id}>
                             <td className="p-2 border">{student.name}</td>
                             <td className="p-2 border">{student.email}</td>
-                            <td className="p-2 border">{student.balance.toLocaleString()} JMD</td>
+                            {/* Only show balance if not paid and balance > 0 */}
+                            {student.paymentStatus !== "Paid" && student.balance > 0 && (
+                              <td className="p-2 border">{student.balance.toLocaleString()} JMD</td>
+                            )}
                             <td className="p-2 border">
                               <button
                                 onClick={() =>
@@ -1886,11 +1889,15 @@ export default function Dashboard() {
               </Card>
               <Card>
                 <CardContent className="p-4">
-                  <h2 className="text-lg font-semibold mb-4">Payments</h2>
-                  <p>Balance: {studentData.balance.toLocaleString()} JMD</p>
-                  <p>Status: {studentData.paymentStatus}</p>
-                  <p>Clearance: {studentData.clearance ? "Yes" : "No"}</p>
-                  {studentData.balance > 0 && (
+                  <h2 className="text-lg font-semibold mb-2">Financial Summary</h2>
+                  <p className="mb-1">Total Owed: <span className="font-bold text-red-500">{studentData.totalOwed?.toLocaleString() || "0"} JMD</span></p>
+                  <p className="mb-1">Total Paid: <span className="font-bold text-green-500">{studentData.totalPaid?.toLocaleString() || "0"} JMD</span></p>
+                  {/* Only show balance if not paid and balance > 0 */}
+                  {studentData.paymentStatus !== "Paid" && studentData.balance > 0 && (
+                    <p className="mb-1">Balance: <span className="font-bold text-yellow-500">{studentData.balance?.toLocaleString() || "0"} JMD</span></p>
+                  )}
+                  <p className="mb-1">Payment Status: <span className="font-bold">{studentData.paymentStatus || "N/A"}</span></p>
+                  {studentData.paymentStatus !== "Paid" && studentData.balance > 0 && (
                     <CheckoutPage
                       studentId={studentData.id}
                       onPaymentSuccess={handlePaymentSuccess}
