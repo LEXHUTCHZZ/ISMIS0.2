@@ -716,6 +716,7 @@ export default function Dashboard() {
                   onMarkAsRead={markNotificationAsRead}
                 />
               </div>
+              
               <div className={styles.section}>
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
                   Payments
@@ -802,7 +803,7 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-            </div>
+            </>
           )}
                 {/* Teacher Statistics Overview */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 p-4 bg-gray-100 rounded-lg shadow">
@@ -1061,7 +1062,6 @@ export default function Dashboard() {
  <p className="text-blue-800">No courses available.</p>
  )}
                 </div>
-            )}
           {(role === "admin" || role === "accountsadmin") && (
             <div className={styles.section}>
  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
