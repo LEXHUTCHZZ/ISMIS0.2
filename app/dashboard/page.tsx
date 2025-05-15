@@ -450,19 +450,38 @@ export default function Dashboard() {
 
   const handlePaymentSuccess = useCallback(
     async (transaction: Transaction): Promise<void> => {
+      if (!studentData) {
+        setError("Student data is not available to process payment.");
+        console.error("handlePaymentSuccess: studentData is null or undefined.");
+        return; 
+      }
       try {
-        const updatedTransactions = [...studentData.transactions, { ...transaction, studentId: studentData.id }];
-        setStudentData({
-          ...studentData,
-          transactions: updatedTransactions,
-          balance: studentData.balance - transaction.amount,
+        const studentId = studentData.id; 
+        if (!studentId) {
+            setError("Student ID is missing, cannot process payment.");
+            console.error("handlePaymentSuccess: studentData.id is null or undefined.");
+            return;
+        }
+
+        const newTransactionWithId = { ...transaction, studentId };
+        const updatedTransactions = [...studentData.transactions, newTransactionWithId];
+        
+        setStudentData(prevStudentData => {
+          if (!prevStudentData) {
+            console.error("handlePaymentSuccess: prevStudentData for setStudentData is null.");
+            return prevStudentData; // or some default/initial state if appropriate
+          }
+          return {
+            ...prevStudentData,
+            transactions: updatedTransactions,
+            balance: prevStudentData.balance - transaction.amount,
+          };
         });
       } catch (err) {
-        setError('Failed to process payment');
-        throw err;
+        console.error('Failed to process payment:', err); 
+        setError('Failed to process payment. Please try again later.');
       }
-    }
-    },
+    }, 
     [studentData, setStudentData, setError]
   );
 
@@ -687,8 +706,7 @@ export default function Dashboard() {
         </aside>
         <div className={styles.centerContent}>
           {error && <p className="text-red-600">{error}</p>}
-          {role === "student" && (
-            <div className={styles.section}>
+          {role === "student" && (<>
               <div className={styles.section}>
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
                   Notifications
@@ -758,15 +776,27 @@ export default function Dashboard() {
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {studentData.courses.length > 0 ? (
-                    studentData.courses.map((course) => (
-                      <div key={course} className="mb-4">
-                        <h4 className="text-blue-800 font-semibold">{course}</h4>
+ studentData.courses.map((courseId) => {
+ const course = allCourses.find((c) => c.id === courseId);
+ if (!course) return null; // Skip if course not found
+ return (
+ <div key={course.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+ <h4 className="font-semibold text-blue-800">{course.name}</h4>
                         <p className="text-gray-600">Course materials and resources</p>
-                        <Link href={`/courses/${course}`} className="text-blue-600 hover:underline">
-                          View Course
+ <div className="flex flex-col space-y-2">
+ <Link href={`/courses/${course.id}/materials`} className="text-blue-600 hover:underline">
+ View Materials
+ </Link>
+ <Link href={`/courses/${course.id}/assignments`} className="text-blue-600 hover:underline">
+ View Assignments
                         </Link>
                       </div>
-                    ))
+ <p className="text-xs text-gray-500 mt-2">
+ Grade: {studentData.grades[course.id] || 'Not Available'}
+ </p>
+ </div>
+ );
+ })
                   ) : (
                     <p className="text-blue-800">No resources available.</p>
                   )}
@@ -774,26 +804,25 @@ export default function Dashboard() {
               </div>
             </div>
           )}
-          {role === "teacher" && (
-            <div className={styles.section}>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-blue-50 p-6 rounded-lg shadow-md">
-                  <h3 className="text-sm font-semibold text-blue-800 mb-2">Total Students</h3>
-                  <p className="text-2xl font-bold text-blue-600">{allStudents.length}</p>
+                {/* Teacher Statistics Overview */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 p-4 bg-gray-100 rounded-lg shadow">
+                  <div className="p-4 bg-blue-50 rounded-lg shadow-sm">
+                    <h3 className="text-sm font-semibold text-blue-800 mb-2">Total Students</h3>
+                    <p className="text-2xl font-bold text-blue-600">{allStudents.length}</p>
+                  </div>
+                  <div className="p-4 bg-green-50 rounded-lg shadow-sm">
+                    <h3 className="text-sm font-semibold text-green-800 mb-2">Resources Uploaded</h3>
+                    <p className="text-2xl font-bold text-green-600">
+                      {allCourses.reduce((acc, course) => acc + (course.resources?.length || 0), 0)}
+                    </p>
+                  </div>
+                  <div className="p-4 bg-purple-50 rounded-lg shadow-sm">
+                    <h3 className="text-sm font-semibold text-purple-800 mb-2">Active Assignments</h3>
+                    <p className="text-2xl font-bold text-purple-600">
+                      {selectedCourseId ? allCourses.find((c) => c.id === selectedCourseId)?.assignments?.length || 0 : 0}
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-green-50 p-6 rounded-lg shadow-md">
-                  <h3 className="text-sm font-semibold text-green-800 mb-2">Resources Uploaded</h3>
-                  <p className="text-2xl font-bold text-green-600">
-                    {allCourses.reduce((acc, course) => acc + (course.resources?.length || 0), 0)}
-                  </p>
-                </div>
-                <div className="bg-purple-50 p-6 rounded-lg shadow-md">
-                  <h3 className="text-sm font-semibold text-purple-800 mb-2">Active Assignments</h3>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {selectedCourseId ? allCourses.find((c) => c.id === selectedCourseId)?.assignments?.length || 0 : 0}
-                  </p>
-                </div>
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className={styles.section}>
                   <div className={styles.section}>
@@ -865,7 +894,7 @@ export default function Dashboard() {
                     <h3 className="text-lg font-semibold text-blue-800 mb-4">
                       Manage Grades
                     </h3>
-                    <form onSubmit={handleGradeSubmit} className="space-y-4 Vaughan, Ontario, Canada">
+                    <form onSubmit={handleGradeSubmit} className="space-y-4">
                       <select
                         value={newGrade.studentId}
                         onChange={(e) => setNewGrade({ ...newGrade, studentId: e.target.value })}
@@ -986,48 +1015,59 @@ export default function Dashboard() {
                   </div>
                   <div className={styles.section}>
                     <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Course Resources
+                      Available Resources
                     </h3>
-                    {(() => {
-                      const course = allCourses.find((c) => c.id === selectedCourseId);
-                      return course?.resources?.length ? (
-                        <div className="space-y-4">
-                          {course.resources.map((resource) => (
-                            <div key={resource.id} className="p-4 bg-gray-50 rounded">
-                              <h4 className="font-medium text-blue-800">{resource.title}</h4>
-                              <p className="text-sm text-gray-600">{resource.description}</p>
-                              <div className="mt-2 flex items-center space-x-2">
-                                <a
-                                  href={resource.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800"
-                                >
-                                  View Resource
-                                </a>
-                                <span className="text-gray-400">|</span>
-                                <button
-                                  className="text-red-600 hover:text-red-800"
-                                  onClick={() => alert('Delete feature coming soon!')}
-                                >
-                                  Delete
-                                </button>
-                              </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+ {allCourses.length > 0 ? (
+ allCourses.map((course) => (
+ <div key={course.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+ <h4 className="font-semibold text-blue-800">{course.name}</h4>
+ <p className="text-sm text-gray-600 mb-2">Course Materials and Resources</p>
+ <div className="flex flex-col space-y-2">
+ <Link href={`/courses/${course.id}/materials`} className="text-blue-600 hover:underline">
+ View Materials
+ </Link>
+ <Link href={`/courses/${course.id}/assignments`} className="text-blue-600 hover:underline">
+ View Assignments
+ </Link>
+ </div>
+ {course.resources && course.resources.length > 0 && (
+ <div className="mt-4">
+ <h5 className="text-sm font-medium text-blue-800 mb-2">Resources:</h5>
+ <ul className="list-disc list-inside text-sm text-gray-600">
+ {course.resources.map((resource) => (
+ <li key={resource.id}>
+ <a href={resource.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+ {resource.title} ({resource.type})
+ </a>
+ </li>
+ ))}
+ </ul>
                             </div>
-                          ))}
+ )}
+ {course.assignments && course.assignments.length > 0 && (
+ <div className="mt-4">
+ <h5 className="text-sm font-medium text-blue-800 mb-2">Assignments:</h5>
+ <ul className="list-disc list-inside text-sm text-gray-600">
+ {course.assignments.map((assignment) => (
+ <li key={assignment.id}>{assignment.title} ({assignment.points} points)</li>
+ ))}
+ </ul>
+                            </div>
+ )}
                         </div>
-                      ) : (
-                        <p className="text-blue-800">No resources available.</p>
-                      );
-                    })()}
-                  </div>
+ ))
+ ) : (
+ <p className="text-blue-800">No courses available.</p>
+ )}
                 </div>
-              </div>
-            </div>
-          )}
-          {role === "admin" && (
+            )}
+          {(role === "admin" || role === "accountsadmin") && (
             <div className={styles.section}>
-              <div className={styles.section}>
+ <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+ {/* Admin/Accounts Admin Overview Metrics (optional) */}
+ </div>
+              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
                   Search Students
                 </h3>
@@ -1057,7 +1097,7 @@ export default function Dashboard() {
                   </div>
                 )}
               </div>
-              <div className={styles.section}>
+              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
                   Upload Resources
                 </h3>
@@ -1125,22 +1165,43 @@ export default function Dashboard() {
                   Available Resources
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {studentData.courses.length > 0 ? (
-                    studentData.courses.map((course) => (
-                      <div key={course} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
-                        <h4 className="font-semibold text-blue-800">{course}</h4>
+ {allCourses.length > 0 ? (
+ allCourses.map((course) => (
+ <div key={course.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
+ <h4 className="font-semibold text-blue-800">{course.name}</h4>
                         <p className="text-sm text-gray-600 mb-2">Course Materials and Resources</p>
                         <div className="flex flex-col space-y-2">
-                          <Link href={`/courses/${course}/materials`} className="text-blue-600 hover:underline">
+ <Link href={`/courses/${course.id}/materials`} className="text-blue-600 hover:underline">
                             View Materials
                           </Link>
-                          <Link href={`/courses/${course}/assignments`} className="text-blue-600 hover:underline">
+ <Link href={`/courses/${course.id}/assignments`} className="text-blue-600 hover:underline">
                             View Assignments
                           </Link>
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">
-                          Grade: {studentData.grades[course] || 'Not Available'}
-                        </p>
+ {course.resources && course.resources.length > 0 && (
+ <div className="mt-4">
+ <h5 className="text-sm font-medium text-blue-800 mb-2">Resources:</h5>
+ <ul className="list-disc list-inside text-sm text-gray-600">
+ {course.resources.map((resource) => (
+ <li key={resource.id}>
+ <a href={resource.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+ {resource.title} ({resource.type})
+ </a>
+ </li>
+ ))}
+ </ul>
+                            </div>
+ )}
+ {course.assignments && course.assignments.length > 0 && (
+ <div className="mt-4">
+ <h5 className="text-sm font-medium text-blue-800 mb-2">Assignments:</h5>
+ <ul className="list-disc list-inside text-sm text-gray-600">
+ {course.assignments.map((assignment) => (
+ <li key={assignment.id}>{assignment.title} ({assignment.points} points)</li>
+ ))}
+ </ul>
+                            </div>
+ )}
                       </div>
                     ))
                   ) : (
@@ -1148,7 +1209,7 @@ export default function Dashboard() {
                   )}
                 </div>
               </div>
-              <div className={styles.section}>
+              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
                   Manage Grades
                 </h3>
@@ -1227,7 +1288,7 @@ export default function Dashboard() {
                   </button>
                 </form>
               </div>
-              <div className={styles.section}>
+              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
                   Manage Students
                 </h3>
@@ -1330,84 +1391,6 @@ export default function Dashboard() {
                 >
                   Download Financial Report
                 </button>
-              </div>
-            </div>
-          )}
-          {role === "accountsadmin" && (
-            <div className="space-y-6">
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Search Students
-                </h3>
-                <input
-                  type="text"
-                  placeholder="Search by student name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full p-2 border rounded text-blue-800"
-                />
-                {searchQuery && (
-                  <div className="mt-4 space-y-2">
-                    {filteredStudents.length > 0 ? (
-                      filteredStudents.map((student) => (
-                        <div key={student.id} className="flex items-center space-x-4 p-2 border-b">
-                          <div>
-                            <p className="text-blue-800 font-medium">{student.name}</p>
-                            <p className="text-blue-800 text-sm">Email: {student.email}</p>
-                            <p className="text-blue-800 text-sm">Balance: {student.balance.toLocaleString()} JMD</p>
-                            <p className="text-blue-800 text-sm">Clearance: {student.clearance ? "Yes" : "No"}</p>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-blue-800">No students found.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Manage Student Clearances
-                </h3>
-                {allStudents.length > 0 ? (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-blue-800 text-white">
-                        <th className="p-2 border">Name</th>
-                        <th className="p-2 border">Email</th>
-                        <th className="p-2 border">Balance</th>
-                        <th className="p-2 border">Clearance</th>
-                        <th className="p-2 border">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allStudents.map((student) => (
-                        <tr key={student.id}>
-                          <td className="p-2 border text-blue-800">{student.name}</td>
-                          <td className="p-2 border text-blue-800">{student.email}</td>
-                          <td className="p-2 border text-blue-800">{student.balance.toLocaleString()} JMD</td>
-                          <td className="p-2 border text-blue-800">{student.clearance ? "Yes" : "No"}</td>
-                          <td className="p-2 border">
-                            <button
-                              onClick={() =>
-                                student.clearance
-                                  ? handleRemoveClearance(student.id)
-                                  : handleGrantClearance(student.id)
-                              }
-                              className={`px-2 py-1 rounded text-white ${
-                                student.clearance ? "bg-red-600 hover:bg-red-700" : "bg-green-600 hover:bg-green-700"
-                              }`}
-                            >
-                              {student.clearance ? "Revoke" : "Grant"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-blue-800">No students available.</p>
-                )}
               </div>
               <div className="bg-white p-6 rounded-lg shadow-md">
                 <h3 className="text-lg font-semibold text-blue-800 mb-4">
