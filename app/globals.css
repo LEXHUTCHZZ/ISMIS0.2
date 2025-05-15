@@ -3,9 +3,11 @@
 @tailwind utilities;
 
 body {
-  background-color: #FFFFFF; /* White */
-  color: #7F1D1D; /* Red */
-  font-family: Arial, Helvetica, sans-serif;
+  @apply bg-white text-black;
+}
+
+.dark body {
+  @apply bg-gray-900 text-white;
 }
 
 /* Raw CSS for table inputs and cells */

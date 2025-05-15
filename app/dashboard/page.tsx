@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import styles from '../styles/loading.module.css';
+import React, { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "../../contexts/AuthContext";
 import { auth, db } from "@/lib/firebase";
 import {
   onAuthStateChanged,
@@ -10,7 +12,6 @@ import {
 import {
   collection,
   query,
-  where,
   getDocs,
   getDoc,
   doc,
@@ -20,11 +21,12 @@ import {
   setDoc,
 } from "firebase/firestore";
 import { v4 as uuidv4 } from 'uuid';
-import { useRouter } from "next/navigation";
-import Link from "next/link";
-import { useAuth } from "../../contexts/AuthContext";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, Legend } from "recharts";
 import CheckoutPage from "../../components/CheckoutPage";
 import { markNotificationAsRead } from "../../utils/utils";
 
@@ -111,7 +113,25 @@ interface Assignment {
   createdAt: string;
 }
 
-// Resource Form Component
+// Sample chart data
+const transactionData = [
+  { date: "Jan 2025", amount: 5000 },
+  { date: "Feb 2025", amount: 7000 },
+  { date: "Mar 2025", amount: 4500 },
+  { date: "Apr 2025", amount: 6000 },
+];
+
+const gradeData = [
+  { name: "A", value: 30 },
+  { name: "B", value: 25 },
+  { name: "C", value: 20 },
+  { name: "D", value: 15 },
+  { name: "F", value: 10 },
+];
+
+const COLORS = ["#22C55E", "#A3E635", "#FACC15", "#F97316", "#E11D48"];
+
+// Components
 const ResourceForm = ({
   courseId,
   onAddResource,
@@ -150,12 +170,12 @@ const ResourceForm = ({
         placeholder="Resource Title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="w-full p-2 border rounded text-blue-800"
+        className="w-full p-2 border rounded text-gray-800"
       />
       <select
         value={type}
         onChange={(e) => setType(e.target.value as "video" | "pdf" | "link")}
-        className="w-full p-2 border rounded text-blue-800"
+        className="w-full p-2 border rounded text-gray-800"
       >
         <option value="video">Video</option>
         <option value="pdf">PDF</option>
@@ -166,18 +186,18 @@ const ResourceForm = ({
         placeholder="Resource URL"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
-        className="w-full p-2 border rounded text-blue-800"
+        className="w-full p-2 border rounded text-gray-800"
       />
       <textarea
         placeholder="Description"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        className="w-full p-2 border rounded text-blue-800 min-h-[80px]"
+        className="w-full p-2 border rounded text-gray-800 min-h-[80px]"
       />
       {error && <p className="text-red-600 text-sm">{error}</p>}
       <button
         type="submit"
-        className="w-full px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+        className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
       >
         Add Resource
       </button>
@@ -185,7 +205,6 @@ const ResourceForm = ({
   );
 };
 
-// Assignment Form Component
 const AssignmentForm = ({
   courseId,
   onAddAssignment,
@@ -222,27 +241,27 @@ const AssignmentForm = ({
         placeholder="Assignment Title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        className="w-full p-2 border rounded text-blue-800"
+        className="w-full p-2 border rounded text-gray-800"
       />
       <textarea
         placeholder="Description"
         value={description}
         onChange={(e) => setDescription(e.target.value)}
-        className="w-full p-2 border rounded text-blue-800 min-h-[80px]"
+        className="w-full p-2 border rounded text-gray-800 min-h-[80px]"
       />
       <input
         type="number"
         placeholder="Points"
         value={points}
         onChange={(e) => setPoints(parseInt(e.target.value) || 0)}
-        className="w-full p-2 border rounded text-blue-800"
+        className="w-full p-2 border rounded text-gray-800"
         min="0"
         max="1000"
       />
       {error && <p className="text-red-600 text-sm">{error}</p>}
       <button
         type="submit"
-        className="w-full px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+        className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
       >
         Create Assignment
       </button>
@@ -250,7 +269,6 @@ const AssignmentForm = ({
   );
 };
 
-// Notification List Component
 const NotificationList = ({
   notifications,
   onMarkAsRead,
@@ -267,7 +285,7 @@ const NotificationList = ({
         >
           <div>
             <p
-              className={`text-blue-800 ${
+              className={`text-gray-800 ${
                 notif.read ? "opacity-50" : "font-medium"
               }`}
             >
@@ -288,27 +306,15 @@ const NotificationList = ({
         </div>
       ))
     ) : (
-      <p className="text-blue-800">No notifications.</p>
+      <p className="text-gray-800">No notifications.</p>
     )}
   </div>
 );
 
-// Loading Component
-const LoadingScreen = () => {
-  return (
-    <div className={styles.loadingContainer}>
-      <div className={styles.loader}></div>
-      <div className={styles.loadingText}>Loading your dashboard...</div>
-    </div>
-  );
-};
-
-// Main Dashboard Component
 export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
   const [studentData, setStudentData] = useState<StudentData | null>(null);
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
-  const [resources, setResources] = useState<Resource[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [allTeachers, setAllTeachers] = useState<User[]>([]);
   type Role = "admin" | "student" | "teacher" | "accountsadmin";
@@ -319,7 +325,7 @@ export default function Dashboard() {
   const [selectedCourseId, setSelectedCourseId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const { user } = useAuth();
 
@@ -377,7 +383,6 @@ export default function Dashboard() {
     setIsLoading(true);
     try {
       const fetchedUserData = await initializeUserDoc(currentUser);
-
       setRole(fetchedUserData.role as Role);
       setUsername(fetchedUserData.name || "Unnamed");
       setUserData(fetchedUserData);
@@ -428,62 +433,48 @@ export default function Dashboard() {
       }
 
       if (["teacher", "admin", "accountsadmin"].includes(fetchedUserData.role)) {
-        try {
-          const studentsSnapshot = await getDocs(collection(db, "students"));
-          const studentsList = studentsSnapshot.docs.map((studentDoc) => ({
-            id: studentDoc.id,
-            ...studentDoc.data(),
-            transactions: studentDoc.data().transactions || [],
-            notifications: studentDoc.data().notifications || [],
-            grades: studentDoc.data().grades || {},
-            clearance: studentDoc.data().clearance ?? false,
-            courses: studentDoc.data().courses || [],
-            totalOwed: studentDoc.data().totalOwed || 0,
-            totalPaid: studentDoc.data().totalPaid || 0,
-            balance: studentDoc.data().balance || 0,
-            paymentStatus: studentDoc.data().paymentStatus || "Unpaid",
-          })) as StudentData[];
-          setAllStudents(studentsList);
+        const studentsSnapshot = await getDocs(collection(db, "students"));
+        const studentsList = studentsSnapshot.docs.map((studentDoc) => ({
+          id: studentDoc.id,
+          ...studentDoc.data(),
+          transactions: studentDoc.data().transactions || [],
+          notifications: studentDoc.data().notifications || [],
+          grades: studentDoc.data().grades || {},
+          clearance: studentDoc.data().clearance ?? false,
+          courses: studentDoc.data().courses || [],
+          totalOwed: studentDoc.data().totalOwed || 0,
+          totalPaid: studentDoc.data().totalPaid || 0,
+          balance: studentDoc.data().balance || 0,
+          paymentStatus: studentDoc.data().paymentStatus || "Unpaid",
+        })) as StudentData[];
+        setAllStudents(studentsList);
 
-          const teachersList: User[] = [];
-          for (const student of studentsList) {
-            if (student.teacherId) {
-              try {
-                const teacherDocRef = doc(db, "users", student.teacherId);
-                const teacherSnap = await getDoc(teacherDocRef);
-                if (teacherSnap.exists() && teacherSnap.data().role === "teacher") {
-                  teachersList.push({
-                    id: teacherSnap.id,
-                    ...teacherSnap.data(),
-                  } as User);
-                }
-              } catch (err) {
-                console.warn(`Failed to fetch teacher ${student.teacherId}:`, err);
-              }
+        const teachersList: User[] = [];
+        for (const student of studentsList) {
+          if (student.teacherId) {
+            const teacherDocRef = doc(db, "users", student.teacherId);
+            const teacherSnap = await getDoc(teacherDocRef);
+            if (teacherSnap.exists() && teacherSnap.data().role === "teacher") {
+              teachersList.push({
+                id: teacherSnap.id,
+                ...teacherSnap.data(),
+              } as User);
             }
           }
-          setAllTeachers(teachersList);
+        }
+        setAllTeachers(teachersList);
 
-          if (fetchedUserData.role === "teacher" && studentsList.length > 0) {
-            const assignedStudent = studentsList.find(
-              (s) => s.teacherId === currentUser.uid
-            );
-            setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
-          }
-        } catch (err) {
-          console.error("Failed to fetch students:", err);
-          setError("Failed to load student data.");
+        if (fetchedUserData.role === "teacher" && studentsList.length > 0) {
+          const assignedStudent = studentsList.find(
+            (s) => s.teacherId === currentUser.uid
+          );
+          setSelectedStudentId(assignedStudent ? assignedStudent.id : null);
         }
       }
 
       await fetchCourses();
     } catch (err: any) {
-      console.error("Error fetching data:", err);
-      setError(
-        err.code === "permission-denied"
-          ? "Permission denied. Please ensure your account is set up correctly."
-          : err.message || "Failed to load dashboard data."
-      );
+      setError(err.message || "Failed to load dashboard data.");
     } finally {
       setIsLoading(false);
     }
@@ -506,128 +497,6 @@ export default function Dashboard() {
     return () => unsubscribe();
   }, [user, router, fetchData]);
 
-  const fetchResources = async (studentId?: string) => {
-    try {
-      const resourcesSnapshot = await getDocs(collection(db, "resources"));
-      const allResources = resourcesSnapshot.docs.map(
-        (doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          uploadedAt: doc.data().uploadedAt?.toDate() || new Date(),
-        }) as Resource
-      );
-      const filteredResources = studentId
-        ? allResources.filter((r) => r.recipientId === studentId)
-        : allResources;
-      setResources(filteredResources);
-    } catch (error) {
-      console.error('Error fetching resources:', error);
-    }
-  };
-
-  const handleResourceUpload = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newResource.title || !newResource.type || !newResource.url || !newResource.description || (!newResource.recipientId && role === "teacher")) {
-      alert('Please fill in all required fields, including selecting a student if you are a teacher.');
-      return;
-    }
-
-    try {
-      const resourceRef = collection(db, 'resources');
-      const resourceData = {
-        ...newResource,
-        uploadedBy: userData?.name || 'Unknown',
-        uploadedAt: new Date(),
-        id: uuidv4(),
-      };
-      await addDoc(resourceRef, resourceData);
-
-      const studentRef = doc(db, "students", newResource.recipientId || "");
-      const studentSnap = await getDoc(studentRef);
-      if (studentSnap.exists()) {
-        const studentData = studentSnap.data();
-        const notifications = studentData.notifications || [];
-        notifications.push({
-          id: uuidv4(),
-          message: `New resource uploaded: ${newResource.title}`,
-          date: new Date().toISOString(),
-          read: false,
-        });
-        await updateDoc(studentRef, { notifications });
-      }
-
-      setNewResource({
-        title: '',
-        type: 'video',
-        url: '',
-        description: '',
-        courseCode: '',
-        recipientId: '',
-      });
-      fetchResources(role === "student" ? user?.uid : undefined);
-      alert('Resource uploaded successfully');
-    } catch (error) {
-      console.error('Error uploading resource:', error);
-      alert('Failed to upload resource');
-    }
-  };
-
-  const handleGradeSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newGrade.studentId || !newGrade.courseCode || !newGrade.courseName || !newGrade.mark || !newGrade.grade || !newGrade.credits || !newGrade.semester) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    try {
-      const studentRef = doc(db, 'students', newGrade.studentId);
-      const studentDoc = await getDoc(studentRef);
-
-      if (!studentDoc.exists()) {
-        alert('Student not found');
-        return;
-      }
-
-      const gradeData = {
-        ...newGrade,
-        quality: calculateQualityPoints(newGrade.grade, newGrade.credits),
-        updatedAt: new Date(),
-        id: uuidv4(),
-      };
-
-      const currentGrades = studentDoc.data().grades || {};
-      currentGrades[`${newGrade.courseCode}_${newGrade.semester}`] = gradeData.mark;
-
-      await updateDoc(studentRef, { grades: currentGrades });
-      setNewGrade({
-        studentId: '',
-        courseCode: '',
-        courseName: '',
-        mark: 0,
-        grade: '',
-        credits: 0,
-        semester: '',
-        comments: '',
-      });
-      alert('Grade submitted successfully');
-    } catch (error) {
-      console.error('Error submitting grade:', error);
-      alert('Failed to submit grade');
-    }
-  };
-
-  const calculateQualityPoints = (grade: string, credits: number): number => {
-    const gradePoints: { [key: string]: number } = {
-      'A+': 4.0, 'A': 4.0, 'A-': 3.7,
-      'B+': 3.3, 'B': 3.0, 'B-': 2.7,
-      'C+': 2.3, 'C': 2.0, 'C-': 1.7,
-      'D+': 1.3, 'D': 1.0, 'F': 0.0
-    };
-
-    const points = gradePoints[grade.toUpperCase()] || 0;
-    return points * credits;
-  };
-
   const handleAddResource = async (
     title: string,
     type: 'link' | 'video' | 'pdf',
@@ -635,7 +504,6 @@ export default function Dashboard() {
     description: string
   ) => {
     if (!['teacher', 'admin'].includes(role) || !user || !selectedCourseId) return;
-
     try {
       const resourceRef = collection(db, 'courses', selectedCourseId, 'resources');
       await addDoc(resourceRef, {
@@ -646,12 +514,9 @@ export default function Dashboard() {
         uploadedAt: new Date(),
         uploadedBy: userData?.name || 'Unknown',
       });
-
       await fetchCourses();
-      alert('Resource added successfully!');
     } catch (error) {
-      console.error('Error adding resource:', error);
-      alert('Failed to add resource');
+      setError('Failed to add resource');
     }
   };
 
@@ -680,14 +545,8 @@ export default function Dashboard() {
             : c
         )
       );
-      alert("Assignment created successfully!");
     } catch (err: any) {
-      console.error("Error adding assignment:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to create assignments."
-          : err.message || "Failed to create assignment."
-      );
+      setError(err.message || "Failed to create assignment.");
     }
   };
 
@@ -700,7 +559,7 @@ export default function Dashboard() {
     if (role !== "teacher" || !user) return;
     const student = allStudents.find((s) => s.id === studentId);
     if (!student) {
-      alert("Student not found.");
+      setError("Student not found.");
       return;
     }
     try {
@@ -720,14 +579,8 @@ export default function Dashboard() {
           prev ? { ...prev, grades: updatedGrades } : prev
         );
       }
-      alert("Grade updated successfully!");
     } catch (err: any) {
-      console.error("Error grading assignment:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to update grades."
-          : err.message || "Failed to update grade."
-      );
+      setError(err.message || "Failed to update grade.");
     }
   };
 
@@ -738,14 +591,8 @@ export default function Dashboard() {
       setAllStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, clearance: true } : s))
       );
-      alert("Clearance granted!");
     } catch (err: any) {
-      console.error("Error granting clearance:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to grant clearance."
-          : err.message || "Failed to grant clearance."
-      );
+      setError(err.message || "Failed to grant clearance.");
     }
   };
 
@@ -756,14 +603,8 @@ export default function Dashboard() {
       setAllStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, clearance: false } : s))
       );
-      alert("Clearance removed!");
     } catch (err: any) {
-      console.error("Error removing clearance:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to remove clearance."
-          : err.message || "Failed to remove clearance."
-      );
+      setError(err.message || "Failed to remove clearance.");
     }
   };
 
@@ -776,14 +617,8 @@ export default function Dashboard() {
       if (selectedStudentId === studentId) {
         setSelectedStudentId(null);
       }
-      alert("Account deleted successfully!");
     } catch (err: any) {
-      console.error("Error deleting account:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to delete accounts."
-          : err.message || "Failed to delete account."
-      );
+      setError(err.message || "Failed to delete account.");
     }
   };
 
@@ -805,14 +640,8 @@ export default function Dashboard() {
         paymentStatus: newBalance <= 0 ? "Paid" : "Unpaid",
         transactions: updatedTransactions,
       });
-      alert("Payment processed successfully!");
     } catch (err: any) {
-      console.error("Error processing payment:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to process payments."
-          : err.message || "Failed to process payment."
-      );
+      setError(err.message || "Failed to process payment.");
     }
   };
 
@@ -827,12 +656,7 @@ export default function Dashboard() {
         ),
       });
     } catch (err: any) {
-      console.error("Error marking notification as read:", err);
-      alert(
-        err.code === "permission-denied"
-          ? "You do not have permission to update notifications."
-          : err.message || "Failed to mark notification as read."
-      );
+      setError(err.message || "Failed to mark notification as read.");
     }
   };
 
@@ -857,8 +681,7 @@ export default function Dashboard() {
       });
       doc.save("Financial_Report.pdf");
     } catch (err: any) {
-      console.error("Error generating financial report:", err);
-      alert(err.message || "Failed to generate financial report.");
+      setError(err.message || "Failed to generate financial report.");
     }
   };
 
@@ -866,230 +689,22 @@ export default function Dashboard() {
     student.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const [newResource, setNewResource] = useState<Partial<Resource>>({
-    title: '',
-    type: 'video',
-    url: '',
-    description: '',
-    courseCode: '',
-    recipientId: '',
-  });
-  const [newGrade, setNewGrade] = useState<Partial<Grade>>({
-    studentId: '',
-    courseCode: '',
-    courseName: '',
-    mark: 0,
-    grade: '',
-    credits: 0,
-    semester: '',
-    comments: '',
-  });
-
-<<<<<<< HEAD
-  const handleResourceUpload = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      const formData = new FormData(e.currentTarget);
-      const resource: Resource = {
-        id: uuidv4(),
-        title: formData.get('title') as string,
-        type: formData.get('type') as 'video' | 'pdf' | 'link',
-        url: formData.get('url') as string,
-        description: formData.get('description') as string,
-        uploadedBy: userData?.id || '',
-        uploadedAt: new Date(),
-        courseCode: selectedCourseId,
-        recipientId: formData.get('recipientId') as string,
-      };
-      try {
-        await addDoc(collection(db, 'resources'), {
-          ...resource,
-          uploadedAt: serverTimestamp(),
-        });
-        setNewResource({
-          id: '',
-          title: '',
-          type: 'pdf',
-          url: '',
-          description: '',
-          uploadedBy: '',
-          uploadedAt: new Date(),
-          courseCode: '',
-        });
-      } catch (err) {
-        setError('Failed to upload resource');
-      }
-    },
-    [userData?.id, selectedCourseId]
-  );
-
-  const handleGradeSubmit = useCallback(
-    async (e: React.FormEvent<HTMLFormElement>) => {
-      e.preventDefault();
-      const formData = new FormData(e.currentTarget);
-      const grade: Grade = {
-        id: uuidv4(),
-        studentId: selectedStudentId,
-        courseCode: selectedCourseId,
-        courseName: allCourses.find((c) => c.id === selectedCourseId)?.name || '',
-        mark: Number(formData.get('mark')),
-        grade: formData.get('grade') as string,
-        credits: Number(formData.get('credits')),
-        quality: Number(formData.get('quality')),
-        comments: formData.get('comments') as string,
-        semester: formData.get('semester') as string,
-        updatedAt: new Date(),
-      };
-      try {
-        await addDoc(collection(db, 'grades'), {
-          ...grade,
-          updatedAt: serverTimestamp(),
-        });
-        setNewGrade({
-          id: '',
-          studentId: '',
-          courseCode: '',
-          courseName: '',
-          mark: 0,
-          grade: '',
-          credits: 0,
-          quality: 0,
-          semester: '',
-          updatedAt: new Date(),
-        });
-      } catch (err) {
-        setError('Failed to submit grade');
-      }
-    },
-    [selectedStudentId, selectedCourseId, allCourses]
-  );
-
-  const handleDeleteAccount = useCallback(async () => {
-    try {
-      if (!userData?.id) return;
-      await deleteDoc(doc(db, 'users', userData.id));
-      await auth.currentUser?.delete();
-      router.push('/');
-    } catch (err) {
-      setError('Failed to delete account');
-    }
-  }, [userData?.id, router]);
-
-  const handlePaymentSuccess = useCallback(
-    async (transaction: Transaction): Promise<void> => {
-      if (!studentData) {
-        setError("Student data is not available to process payment.");
-        console.error("handlePaymentSuccess: studentData is null or undefined.");
-        return; 
-      }
-      try {
-        const studentId = studentData.id; 
-        if (!studentId) {
-            setError("Student ID is missing, cannot process payment.");
-            console.error("handlePaymentSuccess: studentData.id is null or undefined.");
-            return;
-        }
-
-        const newTransactionWithId = { ...transaction, studentId };
-        const updatedTransactions = [...studentData.transactions, newTransactionWithId];
-        
-        setStudentData(prevStudentData => {
-          if (!prevStudentData) {
-            console.error("handlePaymentSuccess: prevStudentData for setStudentData is null.");
-            return prevStudentData; // or some default/initial state if appropriate
-          }
-          return {
-            ...prevStudentData,
-            transactions: updatedTransactions,
-            balance: prevStudentData.balance - transaction.amount,
-          };
-        });
-      } catch (err) {
-        console.error('Failed to process payment:', err); 
-        setError('Failed to process payment. Please try again later.');
-      }
-    }, 
-    [studentData, setStudentData, setError]
-  );
-
-  const markNotificationAsRead = async (notificationId: string) => {
-    try {
-      const updatedNotifications = studentData.notifications.map((n) =>
-        n.id === notificationId ? { ...n, read: true } : n
-      );
-      setStudentData({ ...studentData, notifications: updatedNotifications });
-      // Update Firestore if necessary
-    } catch (err) {
-      setError('Failed to mark notification as read');
-    }
-  };
-
-  const toggleTheme = () => {
-    setIsDarkMode((prev) => !prev);
-    document.documentElement.classList.toggle('dark-mode');
-  };
-
-  const handleGrantClearance = async (studentId: string) => {
-    try {
-      const studentRef = doc(db, 'students', studentId);
-      await updateDoc(studentRef, { clearance: true });
-      setAllStudents((prev) =>
-        prev.map((s) => (s.id === studentId ? { ...s, clearance: true } : s))
-      );
-    } catch (err) {
-      setError('Failed to grant clearance');
-    }
-  };
-
-  const handleRemoveClearance = async (studentId: string) => {
-    try {
-      const studentRef = doc(db, 'students', studentId);
-      await updateDoc(studentRef, { clearance: false });
-      setAllStudents((prev) =>
-        prev.map((s) => (s.id === studentId ? { ...s, clearance: false } : s))
-      );
-    } catch (err) {
-      setError('Failed to remove clearance');
-    }
-  };
-
-  const downloadFinancialReport = () => {
-    const doc = new jsPDF();
-    const tableData = allStudents.map((student) => [
-      student.name,
-      student.email,
-      `${student.balance.toLocaleString()} JMD`,
-      student.clearance ? 'Yes' : 'No',
-    ]);
-    autoTable(doc, {
-      head: [['Name', 'Email', 'Balance', 'Clearance']],
-      body: tableData,
-    });
-    doc.save('financial_report.pdf');
-  };
-
-=======
->>>>>>> parent of 3bb58da (firbase setup55)
-  useEffect(() => {
-    fetchResources(role === "student" ? user?.uid : undefined);
-  }, [role, user]);
-
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <p className="text-blue-800 text-xl">Loading...</p>
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
+        <p className="text-white text-xl">Loading...</p>
       </div>
     );
   }
 
   if (error || !userData) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
+      <div className="flex items-center justify-center min-h-screen bg-gray-900">
         <div className="bg-red-100 border border-red-400 text-red-700 p-4 rounded">
           <p>{error || "User data not found. Please log in again."}</p>
           <Link
             href="/auth/login"
-            className="mt-2 inline-block px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
+            className="mt-2 inline-block px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
           >
             Login
           </Link>
@@ -1099,15 +714,15 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="flex min-h-screen bg-gray-100">
+    <div className="flex min-h-screen bg-gray-900 text-white">
       {/* Sidebar */}
-      <div className="w-64 bg-white shadow-md p-4">
-        <h3 className="text-xl font-semibold text-blue-800 mb-4">SMIS Menu</h3>
+      <div className="w-64 bg-gray-800 p-4 shadow-md">
+        <h3 className="text-xl font-semibold text-white mb-4">SMIS Menu</h3>
         <ul className="space-y-2">
           <li>
             <Link
               href="/dashboard"
-              className="block p-2 text-blue-800 hover:bg-blue-50 rounded"
+              className="block p-2 text-white hover:bg-gray-700 rounded"
             >
               Dashboard
             </Link>
@@ -1115,15 +730,15 @@ export default function Dashboard() {
           <li>
             <Link
               href="/profile"
-              className="block p-2 text-blue-800 hover:bg-blue-50 rounded"
+              className="block p-2 text-white hover:bg-gray-700 rounded"
             >
               Profile
             </Link>
           </li>
           <li>
             <button
-              onClick={() => auth.signOut()}
-              className="block w-full text-left p-2 text-blue-800 hover:bg-blue-50 rounded"
+              onClick={() => signOut(auth)}
+              className="block w-full text-left p-2 text-white hover:bg-gray-700 rounded"
             >
               Logout
             </button>
@@ -1134,1297 +749,269 @@ export default function Dashboard() {
       {/* Main Content */}
       <div className="flex-1 p-6">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center space-x-4">
-              <img
-                src={
-                  userData.profilePicture ||
-                  "https://as2.ftcdn.net/v2/jpg/05/89/93/27/1000_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg"
-                }
-                alt="Profile"
-                className="w-12 h-12 rounded-full object-cover"
-                onError={(e) =>
-                  (e.currentTarget.src =
-                    "https://as2.ftcdn.net/v2/jpg/05/89/93/27/1000_F_589932782_vQAEAZhHnq1QCGu5ikwrYaQD0Mmurm0N.jpg")
-                }
-              />
-              <div>
-                <h2 className="text-2xl font-bold text-blue-800">
-                  {greeting}, {username}
-                </h2>
-                <p className="text-blue-800 capitalize">{role} Dashboard</p>
-              </div>
-            </div>
-          </div>
-<<<<<<< HEAD
-        </div>
-      </header>
-      <main className={styles.mainContent}>
-        <aside className={styles.sidebar}>
-          <nav>
-            <a href="#" className={styles.active}><FiHome /> Dashboard</a>
-            <a href="#"><FiUser /> Profile</a>
-            <a href="#"><FiBook /> Courses</a>
-            <a href="#"><FiDollarSign /> Payments</a>
-            <a href="#"><FiCreditCard /> Billing</a>
-            <a href="#"><FiSettings /> Settings</a>
-          </nav>
-        </aside>
-        <div className={styles.centerContent}>
-          {error && <p className="text-red-600">{error}</p>}
-          {role === "student" && (<>
-              <div className={styles.section}>
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Notifications
-                </h3>
-                <NotificationList
-                  notifications={studentData.notifications}
-                  onMarkAsRead={markNotificationAsRead}
-                />
-              </div>
-              
-              <div className={styles.section}>
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Payments
-                </h3>
-                <p className="text-blue-800">Balance: {studentData.balance.toLocaleString()} JMD</p>
-                <p className="text-blue-800">Status: {studentData.paymentStatus}</p>
-                <p className="text-blue-800">Clearance: {studentData.clearance ? "Yes" : "No"}</p>
-                {studentData.transactions.length > 0 && (
-                  <div className="mt-4">
-                    <h4 className="text-blue-800 font-medium">Transaction History</h4>
-                    {studentData.transactions.map((txn) => (
-                      <p key={txn.id} className="text-blue-800">
-                        {new Date(txn.date).toLocaleString()}: {txn.amount.toLocaleString()} JMD - {txn.status}
-                      </p>
-                    ))}
-                  </div>
-                )}
-                {studentData.balance > 0 ? (
-                  <div className="mt-4">
-                    <CheckoutPage
-                      studentId={studentData.id}
-                      onPaymentSuccess={handlePaymentSuccess}
-                      amount={studentData.balance}
-                    />
-                  </div>
-                ) : (
-                  <p className="text-green-600 mt-2">No outstanding balance.</p>
-                )}
-              </div>
-              <div className={styles.section}>
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Your Grades
-                </h3>
-                {Object.keys(studentData.grades).length > 0 ? (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-blue-800 text-white">
-                        <th className="p-2 border">Assignment</th>
-                        <th className="p-2 border">Grade</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(studentData.grades).map(([key, grade]) => (
-                        <tr key={key}>
-                          <td className="p-2 border text-blue-800">{key}</td>
-                          <td className="p-2 border text-blue-800">{grade}/100</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-blue-800">No grades available.</p>
-                )}
-              </div>
-              <div className={styles.section}>
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Your Resources
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {studentData.courses.length > 0 ? (
- studentData.courses.map((courseId) => {
- const course = allCourses.find((c) => c.id === courseId);
- if (!course) return null; // Skip if course not found
- return (
- <div key={course.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
- <h4 className="font-semibold text-blue-800">{course.name}</h4>
-                        <p className="text-gray-600">Course materials and resources</p>
- <div className="flex flex-col space-y-2">
- <Link href={`/courses/${course.id}/materials`} className="text-blue-600 hover:underline">
- View Materials
- </Link>
- <Link href={`/courses/${course.id}/assignments`} className="text-blue-600 hover:underline">
- View Assignments
-                        </Link>
-                      </div>
- <p className="text-xs text-gray-500 mt-2">
- Grade: {studentData.grades[course.id] || 'Not Available'}
- </p>
- </div>
- );
- })
-                  ) : (
-                    <p className="text-blue-800">No resources available.</p>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-                {/* Teacher Statistics Overview */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 p-4 bg-gray-100 rounded-lg shadow">
-                  <div className="p-4 bg-blue-50 rounded-lg shadow-sm">
-                    <h3 className="text-sm font-semibold text-blue-800 mb-2">Total Students</h3>
-                    <p className="text-2xl font-bold text-blue-600">{allStudents.length}</p>
-                  </div>
-                  <div className="p-4 bg-green-50 rounded-lg shadow-sm">
-                    <h3 className="text-sm font-semibold text-green-800 mb-2">Resources Uploaded</h3>
-                    <p className="text-2xl font-bold text-green-600">
+          <h1 className="text-3xl font-bold mb-2">{greeting}, {username}</h1>
+          <p className="text-lg mb-6 capitalize">{role} Dashboard</p>
+
+          <Tabs defaultValue="overview" className="mb-6">
+            <TabsList>
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="courses">Courses</TabsTrigger>
+              <TabsTrigger value="paymentsgrades">Grades</TabsTrigger>
+              {role !== "student" && <TabsTrigger value="students">Students</TabsTrigger>}
+            </TabsList>
+
+            <TabsContent value="overview">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-2">Total Students</h2>
+                    <p className="text-2xl font-bold">{allStudents.length}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-2">Total Courses</h2>
+                    <p className="text-2xl font-bold">{allCourses.length}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-2">Total Resources</h2>
+                    <p className="text-2xl font-bold">
                       {allCourses.reduce((acc, course) => acc + (course.resources?.length || 0), 0)}
                     </p>
-                  </div>
-                  <div className="p-4 bg-purple-50 rounded-lg shadow-sm">
-                    <h3 className="text-sm font-semibold text-purple-800 mb-2">Active Assignments</h3>
-                    <p className="text-2xl font-bold text-purple-600">
-                      {selectedCourseId ? allCourses.find((c) => c.id === selectedCourseId)?.assignments?.length || 0 : 0}
-                    </p>
-                  </div>
-                </div>
-=======
+                  </CardContent>
+                </Card>
+              </div>
 
-          {/* Student Dashboard */}
-          {role === "student" && (
-            <div className="space-y-6">
-              {!studentData ? (
-                <div className="bg-white p-6 rounded-lg shadow-md">
-                  <p className="text-blue-800 text-center">
-                    No student profile found. Contact support to set up your
-                    account.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-6">
-                  {/* Notifications */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Notifications
-                    </h3>
-                    <NotificationList
-                      notifications={studentData.notifications}
-                      onMarkAsRead={handleMarkNotificationAsRead}
-                    />
-                  </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-4">Transaction Trends</h2>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <LineChart data={transactionData}>
+                        <XAxis dataKey="date" stroke="#8884d8" />
+                        <YAxis stroke="#8884d8" />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="amount" stroke="#22C55E" strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-4">Grade Distribution</h2>
+                    <ResponsiveContainer width="100%" height={250}>
+                      <PieChart>
+                        <Pie
+                          data={gradeData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          innerRadius={40}
+                          fill="#8884d8"
+                          label
+                        >
+                          {gradeData.map((entry, index) => (
+                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                          ))}
+                        </Pie>
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              </div>
+            </TabsContent>
 
-                  {/* Payments */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Payments
-                    </h3>
-                    <p className="text-blue-800">
-                      Balance: {studentData.balance.toLocaleString()} JMD
-                    </p>
-                    <p className="text-blue-800">
-                      Status: {studentData.paymentStatus}
-                    </p>
-                    <p className="text-blue-800">
-                      Clearance: {studentData.clearance ? "Yes" : "No"}
-                    </p>
-                    {studentData.transactions.length > 0 && (
-                      <div className="mt-4">
-                        <h4 className="text-blue-800 font-medium">
-                          Transaction History
-                        </h4>
-                        {studentData.transactions.map((txn) => (
-                          <p key={txn.id} className="text-blue-800">
-                            {new Date(txn.date).toLocaleString()}:{" "}
-                            {txn.amount.toLocaleString()} JMD - {txn.status}
-                          </p>
-                        ))}
-                      </div>
-                    )}
-                    {studentData.balance > 0 ? (
-                      <div className="mt-4">
-                        <CheckoutPage
-                          studentId={studentData.id}
-                          onPaymentSuccess={handlePaymentSuccess}
-                          amount={studentData.balance}
-                        />
-                      </div>
-                    ) : (
-                      <p className="text-green-600 mt-2">
-                        No outstanding balance.
-                      </p>
-                    )}
-                  </div>
+            <TabsContent value="courses">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {allCourses.map((course) => (
+                  <Card key={course.id}>
+                    <CardContent className="p-4">
+                      <h2 className="text-lg font-semibold mb-2">{course.name}</h2>
+                      <p className="text-sm mb-2">Resources: {course.resources?.length || 0}</p>
+                      <p className="text-sm mb-2">Assignments: {course.assignments?.length || 0}</p>
+                      <Link
+                        href={`/courses/${course.id}/materials`}
+                        className="text-blue-400 hover:underline"
+                      >
+                        View Materials
+                      </Link>
+                      <Link
+                        href={`/courses/${course.id}/assignments`}
+                        className="text-blue-400 hover:underline ml-4"
+                      >
+                        View Assignments
+                      </Link>
+                      {role !== "student" && (
+                        <>
+                          <ResourceForm courseId={course.id} onAddResource={handleAddResource} />
+                          <AssignmentForm courseId={course.id} onAddAssignment={(title, description, points) => handleAddAssignment(course.id, title, description, points)} />
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </TabsContent>
 
-                  {/* Grades */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Your Grades
-                    </h3>
-                    {studentData.grades &&
-                    Object.keys(studentData.grades).length > 0 ? (
+            <TabsContent value="grades">
+              {studentData && role === "student" && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-4">Your Grades</h2>
+                    {Object.keys(studentData.grades).length > 0 ? (
                       <table className="w-full border-collapse">
                         <thead>
-                          <tr className="bg-blue-800 text-white">
+                          <tr className="bg-gray-700">
                             <th className="p-2 border">Assignment</th>
                             <th className="p-2 border">Grade</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {Object.entries(studentData.grades).map(
-                            ([key, grade]) => (
-                              <tr key={key}>
-                                <td className="p-2 border text-blue-800">
-                                  {key}
-                                </td>
-                                <td className="p-2 border text-blue-800">
-                                  {grade}/100
-                                </td>
-                              </tr>
-                            )
-                          )}
+                          {Object.entries(studentData.grades).map(([key, grade]) => (
+                            <tr key={key}>
+                              <td className="p-2 border">{key}</td>
+                              <td className="p-2 border">{grade}/100</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     ) : (
-                      <p className="text-blue-800">No grades available.</p>
+                      <p>No grades available.</p>
                     )}
-                  </div>
-
-                  {/* Resources */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Your Resources
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {resources.length > 0 ? (
-                        resources.map((resource) => (
-                          <div key={resource.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
-                            <h4 className="font-semibold text-blue-800">{resource.title}</h4>
-                            <p className="text-sm text-gray-600 mb-2">
-                              {resource.courseCode && <span className="font-semibold">[{resource.courseCode}] </span>}
-                              {resource.type.toUpperCase()}
-                            </p>
-                            <p className="text-sm mb-2">{resource.description}</p>
-                            <a
-                              href={resource.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-blue-600 hover:underline"
-                            >
-                              Access Resource
-                            </a>
-                            <p className="text-xs text-gray-500 mt-2">
-                              Uploaded by {resource.uploadedBy} on {new Date(resource.uploadedAt).toLocaleDateString()}
-                            </p>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-blue-800">No resources available.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  </CardContent>
+                </Card>
               )}
-            </div>
-          )}
-
-          {/* Teacher Dashboard */}
-          {role === "teacher" && (
-            <div className="space-y-6">
-              {/* Quick Stats */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="bg-blue-50 p-6 rounded-lg shadow-md">
-                  <h3 className="text-sm font-semibold text-blue-800 mb-2">Total Students</h3>
-                  <p className="text-2xl font-bold text-blue-600">
-                    {allStudents.length}
-                  </p>
-                </div>
-                <div className="bg-green-50 p-6 rounded-lg shadow-md">
-                  <h3 className="text-sm font-semibold text-green-800 mb-2">Resources Uploaded</h3>
-                  <p className="text-2xl font-bold text-green-600">
-                    {resources.filter(r => user && r.uploadedBy === userData?.name).length}
-                  </p>
-                </div>
-                <div className="bg-purple-50 p-6 rounded-lg shadow-md">
-                  <h3 className="text-sm font-semibold text-purple-800 mb-2">Active Assignments</h3>
-                  <p className="text-2xl font-bold text-purple-600">
-                    {selectedCourseId ? 
-                      allCourses.find(c => c.id === selectedCourseId)?.assignments.length || 0
-                      : 0
-                    }
-                  </p>
-                </div>
-              </div>
-
->>>>>>> parent of 3bb58da (firbase setup55)
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Left Column */}
-                <div className="space-y-6">
-                  {/* Resource Management */}
-                  <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Upload Resources
-                    </h3>
-                    <form onSubmit={handleResourceUpload} className="space-y-4">
-                      <div className="grid grid-cols-1 gap-4">
-                        <select
-                          value={newResource.recipientId || ''}
-                          onChange={(e) => setNewResource({ ...newResource, recipientId: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        >
-                          <option value="">Select Student</option>
-                          {allStudents.length > 0 ? (
-                            allStudents.map(student => (
-                              <option key={student.id} value={student.id}>
-                                {student.name}
-                              </option>
-                            ))
-                          ) : (
-                            <option value="" disabled>No students available</option>
-                          )}
-                        </select>
-                        <input
-                          type="text"
-                          placeholder="Resource Title"
-                          value={newResource.title || ''}
-                          onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        />
-                        <select
-                          value={newResource.type || 'video'}
-                          onChange={(e) => setNewResource({ ...newResource, type: e.target.value as 'video' | 'pdf' | 'link' })}
-                          className="p-2 border rounded"
-                          required
-                        >
-                          <option value="video">YouTube Video</option>
-                          <option value="pdf">PDF Document</option>
-                          <option value="link">External Link</option>
-                        </select>
-                        <input
-                          type="text"
-                          placeholder="Resource URL"
-                          value={newResource.url || ''}
-                          onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        />
-                        <input
-                          type="text"
-                          placeholder="Course Code (optional)"
-                          value={newResource.courseCode || ''}
-                          onChange={(e) => setNewResource({ ...newResource, courseCode: e.target.value })}
-                          className="p-2 border rounded"
-                        />
-                        <textarea
-                          placeholder="Resource Description"
-                          value={newResource.description || ''}
-                          onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
-                          className="p-2 border rounded"
-                          rows={3}
-                          required
-                        />
+              {role === "teacher" && (
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-4">Grade Assignments</h2>
+                    <select
+                      value={selectedStudentId || ""}
+                      onChange={(e) => setSelectedStudentId(e.target.value)}
+                      className="w-full p-2 border rounded mb-4 text-gray-800"
+                    >
+                      <option value="">Select Student</option>
+                      {allStudents.map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {student.name}
+                        </option>
+                      ))}
+                    </select>
+                    {selectedStudentId && (
+                      <div>
+                        {/* Add grade input form here */}
                       </div>
-                      <button
-                        type="submit"
-                        className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                      >
-                        Upload Resource
-                      </button>
-                    </form>
-                  </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+            </TabsContent>
 
-                  {/* Grade Management */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Manage Grades
-                    </h3>
-                    <form onSubmit={handleGradeSubmit} className="space-y-4">
-<<<<<<< HEAD
-                      <select
-                        value={newGrade.studentId}
-                        onChange={(e) => setNewGrade({ ...newGrade, studentId: e.target.value })}
-                        className="p-2 border rounded"
-                        required
-                      >
-                        <option value="">Select Student</option>
-                        {allStudents.map((student) => (
-                          <option key={student.id} value={student.id}>{student.name}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="text"
-                        placeholder="Course Code"
-                        value={newGrade.courseCode}
-                        onChange={(e) => setNewGrade({ ...newGrade, courseCode: e.target.value })}
-                        className="p-2 border rounded"
-                        required
-                      />
-                      <input
-                        type="text"
-                        placeholder="Course Name"
-                        value={newGrade.courseName}
-                        onChange={(e) => setNewGrade({ ...newGrade, courseName: e.target.value })}
-                        className="p-2 border rounded"
-                        required
-                      />
-                      <input
-                        type="number"
-                        placeholder="Mark (0-100)"
-                        value={newGrade.mark}
-                        onChange={(e) => setNewGrade({ ...newGrade, mark: parseInt(e.target.value) || 0 })}
-                        min="0"
-                        max="100"
-                        className="p-2 border rounded"
-                        required
-                      />
-                      <select
-                        value={newGrade.grade}
-                        onChange={(e) => setNewGrade({ ...newGrade, grade: e.target.value })}
-                        className="p-2 border rounded"
-                        required
-                      >
-                        <option value="">Select Grade</option>
-                        {['A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'F'].map((grade) => (
-                          <option key={grade} value={grade}>{grade}</option>
-                        ))}
-                      </select>
-                      <input
-                        type="number"
-                        placeholder="Credits"
-                        value={newGrade.credits}
-                        onChange={(e) => setNewGrade({ ...newGrade, credits: parseInt(e.target.value) || 0 })}
-                        min="1"
-                        className="p-2 border rounded"
-                        required
-                      />
-                      <input
-                        type="text"
-                        placeholder="Semester (e.g., Fall 2023)"
-                        value={newGrade.semester}
-                        onChange={(e) => setNewGrade({ ...newGrade, semester: e.target.value })}
-                        className="p-2 border rounded"
-                        required
-                      />
-=======
-                      <div className="grid grid-cols-1 gap-4">
-                        <select
-                          value={newGrade.studentId || ''}
-                          onChange={(e) => setNewGrade({ ...newGrade, studentId: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        >
-                          <option value="">Select Student</option>
-                          {allStudents.length > 0 ? (
-                            allStudents.map(student => (
-                              <option key={student.id} value={student.id}>
-                                {student.name}
-                              </option>
-                            ))
-                          ) : (
-                            <option value="" disabled>No students available</option>
-                          )}
-                        </select>
-                        <input
-                          type="text"
-                          placeholder="Course Code"
-                          value={newGrade.courseCode || ''}
-                          onChange={(e) => setNewGrade({ ...newGrade, courseCode: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        />
-                        <input
-                          type="text"
-                          placeholder="Course Name"
-                          value={newGrade.courseName || ''}
-                          onChange={(e) => setNewGrade({ ...newGrade, courseName: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        />
-                        <input
-                          type="number"
-                          placeholder="Mark (0-100)"
-                          value={newGrade.mark || ''}
-                          onChange={(e) => setNewGrade({ ...newGrade, mark: parseInt(e.target.value) })}
-                          min="0"
-                          max="100"
-                          className="p-2 border rounded"
-                          required
-                        />
-                        <select
-                          value={newGrade.grade || ''}
-                          onChange={(e) => setNewGrade({ ...newGrade, grade: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        >
-                          <option value="">Select Grade</option>
-                          <option value="A+">A+</option>
-                          <option value="A">A</option>
-                          <option value="A-">A-</option>
-                          <option value="B+">B+</option>
-                          <option value="B">B</option>
-                          <option value="B-">B-</option>
-                          <option value="C+">C+</option>
-                          <option value="C">C</option>
-                          <option value="C-">C-</option>
-                          <option value="D+">D+</option>
-                          <option value="D">D</option>
-                          <option value="F">F</option>
-                        </select>
-                        <input
-                          type="number"
-                          placeholder="Credits"
-                          value={newGrade.credits || ''}
-                          onChange={(e) => setNewGrade({ ...newGrade, credits: parseInt(e.target.value) })}
-                          min="1"
-                          className="p-2 border rounded"
-                          required
-                        />
-                        <input
-                          type="text"
-                          placeholder="Semester (e.g., Fall 2023)"
-                          value={newGrade.semester || ''}
-                          onChange={(e) => setNewGrade({ ...newGrade, semester: e.target.value })}
-                          className="p-2 border rounded"
-                          required
-                        />
-                      </div>
->>>>>>> parent of 3bb58da (firbase setup55)
-                      <button
-                        type="submit"
-                        className="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                      >
-                        Submit Grade
-                      </button>
-                    </form>
-                  </div>
-                </div>
-
-                {/* Right Column */}
-                <div className="space-y-6">
-                  {/* Student Progress */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Student Progress
-                    </h3>
-                    <div className="space-y-4">
-                      {allStudents.length > 0 ? (
-                        allStudents.map(student => (
-                          <div key={student.id} className="p-4 bg-gray-50 rounded">
-                            <h4 className="font-medium text-blue-800">{student.name}</h4>
-                            <div className="mt-2 text-sm text-gray-600">
-                              <p>Assignments Completed: {student.grades ? Object.keys(student.grades).length : 0}</p>
-                              <p>Average Grade: {
-                                student.grades ?
-                                  Object.values(student.grades).length > 0 ?
-                                    (Object.values(student.grades).reduce((a, b) => a + b, 0) / Object.values(student.grades).length).toFixed(1)
-                                    : 'N/A'
-                                  : 'N/A'
-                              }</p>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="text-blue-800">No students available.</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Course Announcements */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Course Announcements
-                    </h3>
-                    <div className="space-y-4">
-                      <textarea
-                        className="w-full p-2 border rounded text-blue-800 mb-2"
-                        placeholder="Write an announcement..."
-                        rows={3}
-                      />
-                      <button
-                        className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors"
-                        onClick={() => {
-                          alert('Announcement feature coming soon!');
-                        }}
-                      >
-                        Post Announcement
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* View Resources */}
-                  <div className="bg-white p-6 rounded-lg shadow-md">
-                    <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                      Available Resources
-                    </h3>
-<<<<<<< HEAD
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
- {allCourses.length > 0 ? (
- allCourses.map((course) => (
- <div key={course.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
- <h4 className="font-semibold text-blue-800">{course.name}</h4>
- <p className="text-sm text-gray-600 mb-2">Course Materials and Resources</p>
- <div className="flex flex-col space-y-2">
- <Link href={`/courses/${course.id}/materials`} className="text-blue-600 hover:underline">
- View Materials
- </Link>
- <Link href={`/courses/${course.id}/assignments`} className="text-blue-600 hover:underline">
- View Assignments
- </Link>
- </div>
- {course.resources && course.resources.length > 0 && (
- <div className="mt-4">
- <h5 className="text-sm font-medium text-blue-800 mb-2">Resources:</h5>
- <ul className="list-disc list-inside text-sm text-gray-600">
- {course.resources.map((resource) => (
- <li key={resource.id}>
- <a href={resource.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
- {resource.title} ({resource.type})
- </a>
- </li>
- ))}
- </ul>
-=======
-                    {(() => {
-                      const course = allCourses.find(c => c.id === selectedCourseId);
-                      return course && course.resources && course.resources.length ? (
-                        <div className="space-y-4">
-                          {course.resources.map((resource, index) => (
-                            <div key={index} className="p-4 bg-gray-50 rounded">
-                              <h4 className="font-medium text-blue-800">{resource.title}</h4>
-                              <p className="text-sm text-gray-600">{resource.description}</p>
-                              <div className="mt-2 flex items-center space-x-2">
-                                <a
-                                  href={resource.url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800"
-                                >
-                                  View Resource
-                                </a>
-                                <span className="text-gray-400">|</span>
+            {role !== "student" && (
+              <TabsContent value="students">
+                <Card>
+                  <CardContent className="p-4">
+                    <h2 className="text-lg font-semibold mb-4">Manage Students</h2>
+                    <input
+                      type="text"
+                      placeholder="Search by student name..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="w-full p-2 border rounded mb-4 text-gray-800"
+                    />
+                    {filteredStudents.length > 0 ? (
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-700">
+                            <th className="p-2 border">Name</th>
+                            <th className="p-2 border">Email</th>
+                            <th className="p-2 border">Balance</th>
+                            <th className="p-2 border">Clearance</th>
+                            <th className="p-2 border">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredStudents.map((student) => (
+                            <tr key={student.id}>
+                              <td className="p-2 border">{student.name}</td>
+                              <td className="p-2 border">{student.email}</td>
+                              <td className="p-2 border">{student.balance.toLocaleString()} JMD</td>
+                              <td className="p-2 border">
                                 <button
-                                  className="text-red-600 hover:text-red-800"
-                                  onClick={() => {
-                                    alert('Delete feature coming soon!');
-                                  }}
+                                  onClick={() =>
+                                    student.clearance
+                                      ? handleRemoveClearance(student.id)
+                                      : handleGrantClearance(student.id)
+                                  }
+                                  className={`px-2 py-1 rounded text-white ${
+                                    student.clearance
+                                      ? "bg-green-600 hover:bg-green-700"
+                                      : "bg-red-600 hover:bg-red-700"
+                                  }`}
+                                >
+                                  {student.clearance ? "Revoke" : "Grant"}
+                                </button>
+                              </td>
+                              <td className="p-2 border">
+                                <button
+                                  onClick={() => handleDeleteAccount(student.id)}
+                                  className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
                                 >
                                   Delete
                                 </button>
-                              </div>
->>>>>>> parent of 3bb58da (firbase setup55)
-                            </div>
- )}
- {course.assignments && course.assignments.length > 0 && (
- <div className="mt-4">
- <h5 className="text-sm font-medium text-blue-800 mb-2">Assignments:</h5>
- <ul className="list-disc list-inside text-sm text-gray-600">
- {course.assignments.map((assignment) => (
- <li key={assignment.id}>{assignment.title} ({assignment.points} points)</li>
- ))}
- </ul>
-                            </div>
- )}
-                        </div>
- ))
- ) : (
- <p className="text-blue-800">No courses available.</p>
- )}
-                </div>
-<<<<<<< HEAD
-          {(role === "admin" || role === "accountsadmin") && (
-            <div className={styles.section}>
- <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
- {/* Admin/Accounts Admin Overview Metrics (optional) */}
- </div>
-              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
-=======
-              </div>
-            </div>
-          )}
-
-          {/* Admin Dashboard */}
-          {role === "admin" && (
-            <div className="space-y-6">
-              {/* Search Students */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
->>>>>>> parent of 3bb58da (firbase setup55)
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Search Students
-                </h3>
-                <input
-                  type="text"
-                  placeholder="Search by student name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full p-2 border rounded text-blue-800"
-                />
-                {searchQuery && (
-                  <div className="mt-4 space-y-2">
-                    {filteredStudents.length > 0 ? (
-                      filteredStudents.map((student) => (
-                        <div
-                          key={student.id}
-                          className="flex items-center space-x-4 p-2 border-b"
-                        >
-                          <div>
-                            <p className="text-blue-800 font-medium">
-                              {student.name}
-                            </p>
-                            <p className="text-blue-800 text-sm">
-                              Email: {student.email}
-                            </p>
-                            <p className="text-blue-800 text-sm">
-                              Balance: {student.balance.toLocaleString()} JMD
-                            </p>
-                            <p className="text-blue-800 text-sm">
-                              Clearance: {student.clearance ? "Yes" : "No"}
-                            </p>
-                          </div>
-                        </div>
-                      ))
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     ) : (
-                      <p className="text-blue-800">No students found.</p>
+                      <p>No students found.</p>
                     )}
-                  </div>
-                )}
-              </div>
-<<<<<<< HEAD
-              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
-=======
-
-              {/* Resource Management */}
-              <div className="bg-English p-6 rounded-lg shadow-md mb-6">
->>>>>>> parent of 3bb58da (firbase setup55)
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Upload Resources
-                </h3>
-                <form onSubmit={handleResourceUpload} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <select
-                      value={newResource.recipientId || ''}
-                      onChange={(e) => setNewResource({ ...newResource, recipientId: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    >
-                      <option value="">Select Student</option>
-                      {allStudents.map(student => (
-                        <option key={student.id} value={student.id}>{student.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Resource Title"
-                      value={newResource.title || ''}
-                      onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    />
-                    <select
-                      value={newResource.type || 'video'}
-                      onChange={(e) => setNewResource({ ...newResource, type: e.target.value as 'video' | 'pdf' | 'link' })}
-                      className="p-2 border rounded"
-                      required
-                    >
-                      <option value="video">YouTube Video</option>
-                      <option value="pdf">PDF Document</option>
-                      <option value="link">External Link</option>
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Course Code (optional)"
-                      value={newResource.courseCode || ''}
-                      onChange={(e) => setNewResource({ ...newResource, courseCode: e.target.value })}
-                      className="p-2 border rounded"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Resource URL"
-                      value={newResource.url || ''}
-                      onChange={(e) => setNewResource({ ...newResource, url: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    />
-                    <textarea
-                      placeholder="Description"
-                      value={newResource.description || ''}
-                      onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
-                      className="p-2 border rounded md:col-span-2"
-                      required
-                    />
-                  </div>
-                  <button type="submit" className="bg-blue-800 text-white px-4 py-2 rounded hover:bg-blue-700">
-                    Upload Resource
-                  </button>
-                </form>
-              </div>
-
-              {/* Resources Display */}
-              <div className="bg-white p-6 rounded-lg shadow-md mb-6">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Available Resources
-                </h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-<<<<<<< HEAD
- {allCourses.length > 0 ? (
- allCourses.map((course) => (
- <div key={course.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
- <h4 className="font-semibold text-blue-800">{course.name}</h4>
-                        <p className="text-sm text-gray-600 mb-2">Course Materials and Resources</p>
-                        <div className="flex flex-col space-y-2">
- <Link href={`/courses/${course.id}/materials`} className="text-blue-600 hover:underline">
-                            View Materials
-                          </Link>
- <Link href={`/courses/${course.id}/assignments`} className="text-blue-600 hover:underline">
-                            View Assignments
-                          </Link>
-                        </div>
- {course.resources && course.resources.length > 0 && (
- <div className="mt-4">
- <h5 className="text-sm font-medium text-blue-800 mb-2">Resources:</h5>
- <ul className="list-disc list-inside text-sm text-gray-600">
- {course.resources.map((resource) => (
- <li key={resource.id}>
- <a href={resource.url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
- {resource.title} ({resource.type})
- </a>
- </li>
- ))}
- </ul>
-                            </div>
- )}
- {course.assignments && course.assignments.length > 0 && (
- <div className="mt-4">
- <h5 className="text-sm font-medium text-blue-800 mb-2">Assignments:</h5>
- <ul className="list-disc list-inside text-sm text-gray-600">
- {course.assignments.map((assignment) => (
- <li key={assignment.id}>{assignment.title} ({assignment.points} points)</li>
- ))}
- </ul>
-                            </div>
- )}
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-blue-800">No courses available.</p>
-                  )}
-                </div>
-              </div>
-              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
-=======
-                  {resources.map((resource) => (
-                    <div key={resource.id} className="border rounded-lg p-4 hover:shadow-lg transition-shadow">
-                      <h4 className="font-semibold text-blue-800">{resource.title}</h4>
-                      <p className="text-sm text-gray-600 mb-2">
-                        {resource.courseCode && <span className="font-semibold">[{resource.courseCode}] </span>}
-                        {resource.type.toUpperCase()}
-                      </p>
-                      <p className="text-sm mb-2">{resource.description}</p>
-                      <a
-                        href={resource.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 hover:underline"
+                    {(role === "admin" || role === "accountsadmin") && (
+                      <button
+                        onClick={downloadFinancialReport}
+                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                       >
-                        Access Resource
-                      </a>
-                      <p className="text-xs text-gray-500 mt-2">
-                        Uploaded by {resource.uploadedBy} on {new Date(resource.uploadedAt).toLocaleDateString()}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Grade Management */}
-              <div className="bg-white p-6 rounded-lg shadow-md mb-6">
->>>>>>> parent of 3bb58da (firbase setup55)
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Manage Grades
-                </h3>
-                <form onSubmit={handleGradeSubmit} className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <select
-                      value={newGrade.studentId || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, studentId: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    >
-                      <option value="">Select Student</option>
-                      {allStudents.map(student => (
-                        <option key={student.id} value={student.id}>{student.name}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="text"
-                      placeholder="Course Code"
-                      value={newGrade.courseCode || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, courseCode: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    />
-                    <input
-                      type="text"
-                      placeholder="Course Name"
-                      value={newGrade.courseName || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, courseName: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    />
-                    <input
-                      type="number"
-                      placeholder="Mark (%)"
-                      value={newGrade.mark || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, mark: Number(e.target.value) })}
-                      className="p-2 border rounded"
-                      required
-                      min="0"
-                      max="100"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Grade (A, B, C, etc.)"
-                      value={newGrade.grade || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, grade: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    />
-                    <input
-                      type="number"
-                      placeholder="Credits"
-                      value={newGrade.credits || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, credits: Number(e.target.value) })}
-                      className="p-2 border rounded"
-                      required
-                    />
-                    <input
-                      type="text"
-                      placeholder="Semester (e.g., 2023-2024 - 1)"
-                      value={newGrade.semester || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, semester: e.target.value })}
-                      className="p-2 border rounded"
-                      required
-                    />
-                    <textarea
-                      placeholder="Comments (optional)"
-                      value={newGrade.comments || ''}
-                      onChange={(e) => setNewGrade({ ...newGrade, comments: e.target.value })}
-                      className="p-2 border rounded lg:col-span-3"
-                    />
-                  </div>
-                  <button type="submit" className="bg-blue-800 text-white px-4 py-2 rounded hover:bg-blue-700">
-                    Submit Grade
-                  </button>
-                </form>
-              </div>
-<<<<<<< HEAD
-              <div className={`${styles.section} ${role === 'accountsadmin' ? 'hidden' : ''}`}>
-=======
-
-              {/* Manage Students */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
->>>>>>> parent of 3bb58da (firbase setup55)
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Manage Students
-                </h3>
-                {allStudents.length > 0 ? (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-blue-800 text-white">
-                        <th className="p-2 border">Name</th>
-                        <th className="p-2 border">Email</th>
-                        <th className="p-2 border">Balance</th>
-                        <th className="p-2 border">Clearance</th>
-                        <th className="p-2 border">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allStudents.map((student) => (
-                        <tr key={student.id}>
-                          <td className="p-2 border text-blue-800">
-                            {student.name}
-                          </td>
-                          <td className="p-2 border text-blue-800">
-                            {student.email}
-                          </td>
-                          <td className="p-2 border text-blue-800">
-                            {student.balance.toLocaleString()} JMD
-                          </td>
-                          <td className="p-2 border">
-                            <button
-                              onClick={() =>
-                                student.clearance
-                                  ? handleRemoveClearance(student.id)
-                                  : handleGrantClearance(student.id)
-                              }
-                              className={`px-2 py-1 rounded text-white ${
-                                student.clearance
-                                  ? "bg-green-600 hover:bg-green-700"
-                                  : "bg-red-600 hover:bg-red-700"
-                              }`}
-                            >
-                              {student.clearance ? "Revoke" : "Grant"}
-                            </button>
-                          </td>
-                          <td className="p-2 border">
-                            <button
-                              onClick={() => handleDeleteAccount(student.id)}
-                              className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                            >
-                              Delete
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-blue-800">No students available.</p>
-                )}
-              </div>
-
-              {/* Payment History */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Payment History
-                </h3>
-                <select
-                  value={selectedStudentId || ""}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="w-full p-2 border rounded text-blue-800 mb-4"
-                >
-                  <option value="">Select a Student</option>
-                  {allStudents.map((student) => (
-                    <option key={student.id} value={student.id}>
-                      {student.name}
-                    </option>
-                  ))}
-                </select>
-                {selectedStudentId && (
-                  (() => {
-                    const student = allStudents.find(
-                      (s) => s.id === selectedStudentId
-                    );
-                    return student && student.transactions.length > 0 ? (
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-blue-800 text-white">
-                            <th className="p-2 border">Date</th>
-                            <th className="p-2 border">Amount</th>
-                            <th className="p-2 border">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {student.transactions.map((txn) => (
-                            <tr key={txn.id}>
-                              <td className="p-2 border text-blue-800">
-                                {new Date(txn.date).toLocaleString()}
-                              </td>
-                              <td className="p-2 border text-blue-800">
-                                {txn.amount.toLocaleString()} JMD
-                              </td>
-                              <td className="p-2 border text-blue-800">
-                                {txn.status}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="text-blue-800">No transactions available.</p>
-                    );
-                  })()
-                )}
-              </div>
-
-              {/* Financial Report Download */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Financial Reports
-                </h3>
-                <button
-                  onClick={downloadFinancialReport}
-                  className="px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
-                >
-                  Download Financial Report
-                </button>
-              </div>
-<<<<<<< HEAD
-=======
-            </div>
-          )}
-
-          {/* Accounts Admin Dashboard */}
-          {role === "accountsadmin" && (
-            <div className="space-y-6">
-              {/* Search Students */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Search Students
-                </h3>
-                <input
-                  type="text"
-                  placeholder="Search by student name..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full p-2 border rounded text-blue-800"
-                />
-                {searchQuery && (
-                  <div className="mt-4 space-y-2">
-                    {filteredStudents.length > 0 ? (
-                      filteredStudents.map((student) => (
-                        <div
-                          key={student.id}
-                          className="flex items-center space-x-4 p-2 border-b"
-                        >
-                          <div>
-                            <p className="text-blue-800 font-medium">
-                              {student.name}
-                            </p>
-                            <p className="text-blue-800 text-sm">
-                              Email: {student.email}
-                            </p>
-                            <p className="text-blue-800 text-sm">
-                              Balance: {student.balance.toLocaleString()} JMD
-                            </p>
-                            <p className="text-blue-800 text-sm">
-                              Clearance: {student.clearance ? "Yes" : "No"}
-                            </p>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-blue-800">No students found.</p>
+                        Download Financial Report
+                      </button>
                     )}
-                  </div>
-                )}
-              </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+            )}
+          </Tabs>
 
-              {/* Manage Student Clearances */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Manage Student Clearances
-                </h3>
-                {allStudents.length > 0 ? (
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-blue-800 text-white">
-                        <th className="p-2 border">Name</th>
-                        <th className="p-2 border">Email</th>
-                        <th className="p-2 border">Balance</th>
-                        <th className="p-2 border">Clearance</th>
-                        <th className="p-2 border">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allStudents.map((student) => (
-                        <tr key={student.id}>
-                          <td className="p-2 border text-blue-800">
-                            {student.name}
-                          </td>
-                          <td className="p-2 border text-blue-800">
-                            {student.email}
-                          </td>
-                          <td className="p-2 border text-blue-800">
-                            {student.balance.toLocaleString()} JMD
-                          </td>
-                          <td className="p-2 border text-blue-800">
-                            {student.clearance ? "Yes" : "No"}
-                          </td>
-                          <td className="p-2 border">
-                            <button
-                              onClick={() =>
-                                student.clearance
-                                  ? handleRemoveClearance(student.id)
-                                  : handleGrantClearance(student.id)
-                              }
-                              className={`px-2 py-1 rounded text-white ${
-                                student.clearance
-                                  ? "bg-red-600 hover:bg-red-700"
-                                  : "bg-green-600 hover:bg-green-700"
-                              }`}
-                            >
-                              {student.clearance ? "Revoke" : "Grant"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-blue-800">No students available.</p>
-                )}
-              </div>
-
-              {/* Payment History */}
->>>>>>> parent of 3bb58da (firbase setup55)
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Payment History
-                </h3>
-                <select
-                  value={selectedStudentId || ""}
-                  onChange={(e) => setSelectedStudentId(e.target.value)}
-                  className="w-full p-2 border rounded text-blue-800 mb-4"
-                >
-                  <option value="">Select a Student</option>
-                  {allStudents.map((student) => (
-                    <option key={student.id} value={student.id}>
-                      {student.name}
-                    </option>
-                  ))}
-                </select>
-                {selectedStudentId && (
-                  (() => {
-                    const student = allStudents.find(
-                      (s) => s.id === selectedStudentId
-                    );
-                    return student && student.transactions.length > 0 ? (
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-blue-800 text-white">
-                            <th className="p-2 border">Date</th>
-                            <th className="p-2 border">Amount</th>
-                            <th className="p-2 border">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {student.transactions.map((txn) => (
-                            <tr key={txn.id}>
-                              <td className="p-2 border text-blue-800">
-                                {new Date(txn.date).toLocaleString()}
-                              </td>
-                              <td className="p-2 border text-blue-800">
-                                {txn.amount.toLocaleString()} JMD
-                              </td>
-                              <td className="p-2 border text-blue-800">
-                                {txn.status}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p className="text-blue-800">No transactions available.</p>
-                    );
-                  })()
-                )}
-              </div>
-
-              {/* Financial Report Download */}
-              <div className="bg-white p-6 rounded-lg shadow-md">
-                <h3 className="text-lg font-semibold text-blue-800 mb-4">
-                  Financial Reports
-                </h3>
-                <button
-                  onClick={downloadFinancialReport}
-                  className="px-4 py-2 bg-blue-800 text-white rounded hover:bg-blue-700"
-                >
-                  Download Financial Report
-                </button>
-              </div>
+          {role === "student" && studentData && (
+            <div className="grid grid-cols-1 gap-4">
+              <Card>
+                <CardContent className="p-4">
+                  <h2 className="text-lg font-semibold mb-4">Notifications</h2>
+                  <NotificationList
+                    notifications={studentData.notifications}
+                    onMarkAsRead={handleMarkNotificationAsRead}
+                  />
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-4">
+                  <h2 className="text-lg font-semibold mb-4">Payments</h2>
+                  <p>Balance: {studentData.balance.toLocaleString()} JMD</p>
+                  <p>Status: {studentData.paymentStatus}</p>
+                  <p>Clearance: {studentData.clearance ? "Yes" : "No"}</p>
+                  {studentData.balance > 0 && (
+                    <CheckoutPage
+                      studentId={studentData.id}
+                      onPaymentSuccess={handlePaymentSuccess}
+                      amount={studentData.balance}
+                    />
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>

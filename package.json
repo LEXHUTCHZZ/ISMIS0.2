@@ -9,12 +9,14 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@radix-ui/react-tabs": "^1.1.11",
     "@stripe/react-stripe-js": "^2.4.0",
     "@stripe/stripe-js": "^2.2.0",
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@types/uuid": "^9.0.7",
     "axios": "^1.6.2",
+    "clsx": "^2.1.1",
     "firebase": "^10.14.1",
     "ismis-stripe-project": "file:",
     "jspdf": "^2.5.2",
@@ -23,7 +25,9 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-window": "^1.8.10",
+    "recharts": "^2.15.3",
     "stripe": "^14.9.0",
+    "tailwind-merge": "^3.3.0",
     "uuid": "^9.0.1"
   },
   "devDependencies": {
