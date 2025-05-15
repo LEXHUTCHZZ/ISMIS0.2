@@ -95,10 +95,12 @@ interface Grade {
   studentId: string;
   courseCode: string;
   courseName: string;
-  mark: number;
-  grade: string;
-  credits: number;
-  quality: number;
+  mark: number; // Percentage mark (0-100)
+  letterGrade: string; // A, B, C, D, F
+  creditsAttempted: number;
+  creditsEarned: number; // Equal to creditsAttempted if grade is passing
+  qualityPoints: number; // Quality points per credit (A=4.0, B=3.0, etc.)
+  totalQualityPoints: number; // qualityPoints * creditsAttempted
   comments?: string;
   semester: string;
   updatedAt: Date;
@@ -130,6 +132,44 @@ const gradeData = [
 ];
 
 const COLORS = ["#22C55E", "#A3E635", "#FACC15", "#F97316", "#E11D48"];
+
+// Grade Utility Functions
+const getLetterGrade = (mark: number): string => {
+  if (mark >= 90) return "A";
+  if (mark >= 80) return "B";
+  if (mark >= 70) return "C";
+  if (mark >= 60) return "D";
+  return "F";
+};
+
+const getQualityPoints = (letterGrade: string): number => {
+  switch (letterGrade) {
+    case "A": return 4.0;
+    case "B": return 3.0;
+    case "C": return 2.0;
+    case "D": return 1.0;
+    case "F": return 0.0;
+    default: return 0.0;
+  }
+};
+
+const calculateCreditsEarned = (letterGrade: string, creditsAttempted: number): number => {
+  return letterGrade === "F" ? 0 : creditsAttempted;
+};
+
+const calculateGradeDetails = (mark: number, creditsAttempted: number) => {
+  const letterGrade = getLetterGrade(mark);
+  const qualityPoints = getQualityPoints(letterGrade);
+  const creditsEarned = calculateCreditsEarned(letterGrade, creditsAttempted);
+  const totalQualityPoints = qualityPoints * creditsAttempted;
+  
+  return {
+    letterGrade,
+    qualityPoints,
+    creditsEarned,
+    totalQualityPoints
+  };
+};
 
 // Components
 const ResourceForm = ({
@@ -306,10 +346,274 @@ const NotificationList = ({
         </div>
       ))
     ) : (
-      <p className="text-gray-800">No notifications.</p>
+      <p className="text-gray-600">No notifications to display.</p>
     )}
   </div>
 );
+
+const GradeEntryForm = ({
+  onAddGrade,
+  studentId,
+}: {
+  onAddGrade: (grade: Omit<Grade, 'id' | 'updatedAt'>) => void;
+  studentId: string;
+}) => {
+  const [courseCode, setCourseCode] = useState("");
+  const [courseName, setCourseName] = useState("");
+  const [semester, setSemester] = useState("");
+  const [mark, setMark] = useState<number | string>("");
+  const [creditsAttempted, setCreditsAttempted] = useState<number | string>("");
+  const [comments, setComments] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    // Validate inputs
+    if (!courseCode || !courseName || !semester || mark === "" || creditsAttempted === "") {
+      setError("All fields except comments are required.");
+      return;
+    }
+
+    const numericMark = Number(mark);
+    const numericCredits = Number(creditsAttempted);
+
+    if (isNaN(numericMark) || numericMark < 0 || numericMark > 100) {
+      setError("Mark must be a number between 0 and 100.");
+      return;
+    }
+
+    if (isNaN(numericCredits) || numericCredits <= 0) {
+      setError("Credits attempted must be a positive number.");
+      return;
+    }
+
+    // Calculate grade details
+    const { letterGrade, qualityPoints, creditsEarned, totalQualityPoints } = 
+      calculateGradeDetails(numericMark, numericCredits);
+
+    // Create the grade object
+    const newGrade = {
+      studentId,
+      courseCode,
+      courseName,
+      semester,
+      mark: numericMark,
+      letterGrade,
+      creditsAttempted: numericCredits,
+      creditsEarned,
+      qualityPoints,
+      totalQualityPoints,
+      comments: comments.trim() || undefined
+    };
+
+    // Submit the grade
+    onAddGrade(newGrade);
+
+    // Reset form
+    setCourseCode("");
+    setCourseName("");
+    setSemester("");
+    setMark("");
+    setCreditsAttempted("");
+    setComments("");
+  };
+
+  return (
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-6">
+      <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Add New Grade</h3>
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label htmlFor="courseCode" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Course Code</label>
+            <input 
+              type="text" 
+              id="courseCode" 
+              value={courseCode} 
+              onChange={(e) => setCourseCode(e.target.value)} 
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+              placeholder="e.g., CS101"
+            />
+          </div>
+          <div>
+            <label htmlFor="courseName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Course Name</label>
+            <input 
+              type="text" 
+              id="courseName" 
+              value={courseName} 
+              onChange={(e) => setCourseName(e.target.value)} 
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+              placeholder="e.g., Introduction to Computer Science"
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label htmlFor="semester" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Semester</label>
+            <input 
+              type="text" 
+              id="semester" 
+              value={semester} 
+              onChange={(e) => setSemester(e.target.value)} 
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+              placeholder="e.g., Fall 2024"
+            />
+          </div>
+          <div>
+            <label htmlFor="mark" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Mark (%)</label>
+            <input 
+              type="number" 
+              id="mark" 
+              value={mark} 
+              onChange={(e) => setMark(e.target.value)} 
+              min="0" 
+              max="100" 
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+              placeholder="0-100"
+            />
+          </div>
+          <div>
+            <label htmlFor="creditsAttempted" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Credits Attempted</label>
+            <input 
+              type="number" 
+              id="creditsAttempted" 
+              value={creditsAttempted} 
+              onChange={(e) => setCreditsAttempted(e.target.value)} 
+              min="0.5" 
+              step="0.5" 
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+              placeholder="e.g., 3.0"
+            />
+          </div>
+        </div>
+        <div>
+          <label htmlFor="comments" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Comments (Optional)</label>
+          <textarea 
+            id="comments" 
+            value={comments} 
+            onChange={(e) => setComments(e.target.value)} 
+            rows={3} 
+            className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white" 
+            placeholder="Add any comments about the student's performance..."
+          />
+        </div>
+        {error && <p className="text-red-500 text-sm">{error}</p>}
+        <button 
+          type="submit" 
+          className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md shadow-sm dark:bg-blue-500 dark:hover:bg-blue-600"
+        >
+          Add Grade
+        </button>
+      </form>
+    </div>
+  );
+};
+
+// GradesTable Component
+const GradesTable = ({ grades }: { grades: Grade[] }) => {
+  if (!grades || grades.length === 0) {
+    return <p className="text-gray-600 dark:text-gray-300">No grades available to display.</p>;
+  }
+
+  // Group grades by semester
+  const gradesBySemester = grades.reduce((acc, grade) => {
+    if (!acc[grade.semester]) {
+      acc[grade.semester] = [];
+    }
+    acc[grade.semester].push(grade);
+    return acc;
+  }, {} as Record<string, Grade[]>);
+
+  // Calculate semester GPA
+  const calculateSemesterGPA = (semesterGrades: Grade[]) => {
+    const totalQualityPoints = semesterGrades.reduce((sum, grade) => sum + grade.totalQualityPoints, 0);
+    const totalCreditsAttempted = semesterGrades.reduce((sum, grade) => sum + grade.creditsAttempted, 0);
+    return totalCreditsAttempted > 0 ? (totalQualityPoints / totalCreditsAttempted).toFixed(2) : "N/A";
+  };
+
+  // Calculate cumulative GPA
+  const calculateCumulativeGPA = () => {
+    const totalQualityPoints = grades.reduce((sum, grade) => sum + grade.totalQualityPoints, 0);
+    const totalCreditsAttempted = grades.reduce((sum, grade) => sum + grade.creditsAttempted, 0);
+    return totalCreditsAttempted > 0 ? (totalQualityPoints / totalCreditsAttempted).toFixed(2) : "N/A";
+  };
+
+  // Sort semesters chronologically (most recent first)
+  const sortedSemesters = Object.keys(gradesBySemester).sort().reverse();
+
+  return (
+    <div className="space-y-8">
+      {sortedSemesters.map(semester => (
+        <div key={semester} className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+          <div className="px-6 py-4 bg-gray-100 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-white flex justify-between">
+              <span>{semester}</span>
+              <span>Semester GPA: {calculateSemesterGPA(gradesBySemester[semester])}</span>
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead className="bg-gray-50 dark:bg-gray-700">
+                <tr>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Course Code
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Course Name
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Credits Att.
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Credits Earned
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Mark (%)
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Grade
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Quality Pts
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Total QP
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                    Comments
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                {gradesBySemester[semester].map((grade) => (
+                  <tr key={grade.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{grade.courseCode}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300">{grade.courseName}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 text-center">{grade.creditsAttempted}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 text-center">{grade.creditsEarned}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 text-center">{grade.mark}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white text-center">{grade.letterGrade}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 text-center">{grade.qualityPoints}</td>
+                    <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700 dark:text-gray-300 text-center">{grade.totalQualityPoints}</td>
+                    <td className="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{grade.comments || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
+
+      {/* Cumulative GPA */}
+      <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-lg shadow-md">
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-white text-right">
+          Cumulative GPA: {calculateCumulativeGPA()}
+        </h3>
+      </div>
+    </div>
+  );
+};
 
 export default function Dashboard() {
   const [userData, setUserData] = useState<User | null>(null);
@@ -317,6 +621,83 @@ export default function Dashboard() {
   const [allStudents, setAllStudents] = useState<StudentData[]>([]);
   const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [allTeachers, setAllTeachers] = useState<User[]>([]);
+  
+  // Sample grades data - Replace with actual data from Firebase in production
+  const [grades, setGrades] = useState<Grade[]>([
+    {
+      id: "g1",
+      studentId: "student1",
+      courseCode: "CS101",
+      courseName: "Introduction to Computer Science",
+      mark: 85,
+      letterGrade: "B",
+      creditsAttempted: 3,
+      creditsEarned: 3,
+      qualityPoints: 3.0,
+      totalQualityPoints: 9.0,
+      semester: "Fall 2024",
+      updatedAt: new Date(),
+      comments: "Good work on the final project"
+    },
+    {
+      id: "g2",
+      studentId: "student1",
+      courseCode: "MATH101",
+      courseName: "Calculus I",
+      mark: 92,
+      letterGrade: "A",
+      creditsAttempted: 4,
+      creditsEarned: 4,
+      qualityPoints: 4.0,
+      totalQualityPoints: 16.0,
+      semester: "Fall 2024",
+      updatedAt: new Date(),
+      comments: "Excellent performance"
+    },
+    {
+      id: "g3",
+      studentId: "student1",
+      courseCode: "ENG101",
+      courseName: "English Composition",
+      mark: 78,
+      letterGrade: "C",
+      creditsAttempted: 3,
+      creditsEarned: 3,
+      qualityPoints: 2.0,
+      totalQualityPoints: 6.0,
+      semester: "Fall 2024",
+      updatedAt: new Date()
+    },
+    {
+      id: "g4",
+      studentId: "student1",
+      courseCode: "CS201",
+      courseName: "Data Structures",
+      mark: 88,
+      letterGrade: "B",
+      creditsAttempted: 3,
+      creditsEarned: 3,
+      qualityPoints: 3.0,
+      totalQualityPoints: 9.0,
+      semester: "Spring 2025",
+      updatedAt: new Date()
+    },
+    {
+      id: "g5",
+      studentId: "student1",
+      courseCode: "PHYS101",
+      courseName: "Physics I",
+      mark: 55,
+      letterGrade: "F",
+      creditsAttempted: 4,
+      creditsEarned: 0, // Failed, so no credits earned
+      qualityPoints: 0.0,
+      totalQualityPoints: 0.0,
+      semester: "Spring 2025",
+      updatedAt: new Date(),
+      comments: "Need to improve, consider tutoring"
+    }
+  ]);
   type Role = "admin" | "student" | "teacher" | "accountsadmin";
   const [role, setRole] = useState<Role>("student");
   const [username, setUsername] = useState("");
@@ -328,6 +709,20 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const router = useRouter();
   const { user } = useAuth();
+  
+  // Function to handle adding a new grade
+  const handleAddGrade = (newGradeData: Omit<Grade, 'id' | 'updatedAt'>) => {
+    const newGrade: Grade = {
+      ...newGradeData,
+      id: uuidv4(), // Generate a unique ID
+      updatedAt: new Date()
+    };
+    
+    setGrades(prevGrades => [...prevGrades, newGrade]);
+    
+    // In production, save to Firebase here
+    // Example: await addDoc(collection(db, 'grades'), newGrade);
+  };
 
   const initializeUserDoc = async (currentUser: any) => {
     const userDocRef = doc(db, "users", currentUser.uid);
@@ -752,12 +1147,15 @@ export default function Dashboard() {
           <h1 className="text-3xl font-bold mb-2">{greeting}, {username}</h1>
           <p className="text-lg mb-6 capitalize">{role} Dashboard</p>
 
-          <Tabs defaultValue="overview" className="mb-6">
-            <TabsList>
+          <Tabs defaultValue="overview" className="w-full">
+            <TabsList className="mb-4 border-b w-full justify-start overflow-x-auto pb-px">
               <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="courses">Courses</TabsTrigger>
-              <TabsTrigger value="paymentsgrades">Grades</TabsTrigger>
-              {role !== "student" && <TabsTrigger value="students">Students</TabsTrigger>}
+              <TabsTrigger value="resources">Resources</TabsTrigger>
+              <TabsTrigger value="assignments">Assignments</TabsTrigger>
+              <TabsTrigger value="finance">Finances</TabsTrigger>
+              <TabsTrigger value="notifications">Notifications</TabsTrigger>
+              <TabsTrigger value="grades">Grades</TabsTrigger>
+              <TabsTrigger value="profile">Profile</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview">
@@ -826,7 +1224,7 @@ export default function Dashboard() {
               </div>
             </TabsContent>
 
-            <TabsContent value="courses">
+            <TabsContent value="resources">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {allCourses.map((course) => (
                   <Card key={course.id}>
@@ -858,7 +1256,75 @@ export default function Dashboard() {
               </div>
             </TabsContent>
 
-            <TabsContent value="grades">
+            <TabsContent value="assignments">
+              {role === "teacher" && selectedCourseId && (
+                <div className="mb-6">
+                  <h3 className="text-xl font-semibold mb-4">Create Assignment</h3>
+                  <AssignmentForm
+                    courseId={selectedCourseId}
+                    onAddAssignment={(title, description, points) => handleAddAssignment(selectedCourseId, title, description, points)}
+                  />
+                </div>
+              )}
+
+              <div className="space-y-4">
+                {/* Selected course assignments */}
+                {allCourses.some(course => course.id === selectedCourseId) ? (
+                  allCourses
+                    .find(course => course.id === selectedCourseId)
+                    ?.assignments?.map((assignment: Assignment) => (
+                      <div key={assignment.id} className="p-4 bg-white rounded-lg shadow">
+                        <h4 className="font-semibold text-lg">{assignment.title}</h4>
+                        <p className="text-gray-700">{assignment.description}</p>
+                        <div className="flex justify-between items-center mt-2">
+                          <span className="text-sm text-gray-600">
+                            {new Date(assignment.createdAt).toLocaleDateString()}
+                          </span>
+                          <span className="font-medium">
+                            {assignment.points} points
+                          </span>
+                        </div>
+                      </div>
+                    )) || <p className="text-gray-600">No assignments available.</p>
+                ) : (
+                  <p className="text-gray-600">No course selected.</p>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="finance">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {allCourses.map((course) => (
+                  <Card key={course.id}>
+                    <CardContent className="p-4">
+                      <h2 className="text-lg font-semibold mb-2">{course.name}</h2>
+                      <p className="text-sm mb-2">Resources: {course.resources?.length || 0}</p>
+                      <p className="text-sm mb-2">Assignments: {course.assignments?.length || 0}</p>
+                      <Link
+                        href={`/courses/${course.id}/materials`}
+                        className="text-blue-400 hover:underline"
+                      >
+                        View Materials
+                      </Link>
+                      <Link
+                        href={`/courses/${course.id}/assignments`}
+                        className="text-blue-400 hover:underline ml-4"
+                      >
+                        View Assignments
+                      </Link>
+                      {role !== "student" && (
+                        <>
+                          <ResourceForm courseId={course.id} onAddResource={handleAddResource} />
+                          <AssignmentForm courseId={course.id} onAddAssignment={(title, description, points) => handleAddAssignment(course.id, title, description, points)} />
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="notifications">
               {studentData && role === "student" && (
                 <Card>
                   <CardContent className="p-4">
@@ -912,78 +1378,110 @@ export default function Dashboard() {
               )}
             </TabsContent>
 
-            {role !== "student" && (
-              <TabsContent value="students">
-                <Card>
-                  <CardContent className="p-4">
-                    <h2 className="text-lg font-semibold mb-4">Manage Students</h2>
-                    <input
-                      type="text"
-                      placeholder="Search by student name..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="w-full p-2 border rounded mb-4 text-gray-800"
+            <TabsContent value="grades" className="p-4">
+              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md">
+                <h2 className="text-2xl font-bold mb-6 text-gray-800 dark:text-white">Gradebook</h2>
+                
+                {/* Show grade entry form only for teachers */}
+                {role === "teacher" && (
+                  <div className="mb-8">
+                    <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Enter New Grade</h3>
+                    <GradeEntryForm 
+                      onAddGrade={handleAddGrade}
+                      studentId={selectedStudentId || "student1"} // In production, use actual selected student ID
                     />
-                    {filteredStudents.length > 0 ? (
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-gray-700">
-                            <th className="p-2 border">Name</th>
-                            <th className="p-2 border">Email</th>
-                            <th className="p-2 border">Balance</th>
-                            <th className="p-2 border">Clearance</th>
-                            <th className="p-2 border">Actions</th>
+                  </div>
+                )}
+                
+                {/* Show the grades table for everyone */}
+                <div>
+                  <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">Student Grades</h3>
+                  <GradesTable grades={grades} />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent value="profile">
+              <Card>
+                <CardContent className="p-4">
+                  <h2 className="text-lg font-semibold mb-4">Your Profile</h2>
+                  <p className="text-sm mb-2">Name: {username}</p>
+                  <p className="text-sm mb-2">Email: {user?.email || ""}</p>
+                  <p className="text-sm mb-2">Role: {role}</p>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="students">
+              <Card>
+                <CardContent className="p-4">
+                  <h2 className="text-lg font-semibold mb-4">Manage Students</h2>
+                  <input
+                    type="text"
+                    placeholder="Search by student name..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full p-2 border rounded mb-4 text-gray-800"
+                  />
+                  {filteredStudents.length > 0 ? (
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gray-700">
+                          <th className="p-2 border">Name</th>
+                          <th className="p-2 border">Email</th>
+                          <th className="p-2 border">Balance</th>
+                          <th className="p-2 border">Clearance</th>
+                          <th className="p-2 border">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredStudents.map((student) => (
+                          <tr key={student.id}>
+                            <td className="p-2 border">{student.name}</td>
+                            <td className="p-2 border">{student.email}</td>
+                            <td className="p-2 border">{student.balance.toLocaleString()} JMD</td>
+                            <td className="p-2 border">
+                              <button
+                                onClick={() =>
+                                  student.clearance
+                                    ? handleRemoveClearance(student.id)
+                                    : handleGrantClearance(student.id)
+                                }
+                                className={`px-2 py-1 rounded text-white ${
+                                  student.clearance
+                                    ? "bg-green-600 hover:bg-green-700"
+                                    : "bg-red-600 hover:bg-red-700"
+                                }`}
+                              >
+                                {student.clearance ? "Revoke" : "Grant"}
+                              </button>
+                            </td>
+                            <td className="p-2 border">
+                              <button
+                                onClick={() => handleDeleteAccount(student.id)}
+                                className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
+                              >
+                                Delete
+                              </button>
+                            </td>
                           </tr>
-                        </thead>
-                        <tbody>
-                          {filteredStudents.map((student) => (
-                            <tr key={student.id}>
-                              <td className="p-2 border">{student.name}</td>
-                              <td className="p-2 border">{student.email}</td>
-                              <td className="p-2 border">{student.balance.toLocaleString()} JMD</td>
-                              <td className="p-2 border">
-                                <button
-                                  onClick={() =>
-                                    student.clearance
-                                      ? handleRemoveClearance(student.id)
-                                      : handleGrantClearance(student.id)
-                                  }
-                                  className={`px-2 py-1 rounded text-white ${
-                                    student.clearance
-                                      ? "bg-green-600 hover:bg-green-700"
-                                      : "bg-red-600 hover:bg-red-700"
-                                  }`}
-                                >
-                                  {student.clearance ? "Revoke" : "Grant"}
-                                </button>
-                              </td>
-                              <td className="p-2 border">
-                                <button
-                                  onClick={() => handleDeleteAccount(student.id)}
-                                  className="px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700"
-                                >
-                                  Delete
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    ) : (
-                      <p>No students found.</p>
-                    )}
-                    {(role === "admin" || role === "accountsadmin") && (
-                      <button
-                        onClick={downloadFinancialReport}
-                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                      >
-                        Download Financial Report
-                      </button>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            )}
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p>No students found.</p>
+                  )}
+                  {(role === "admin" || role === "accountsadmin") && (
+                    <button
+                      onClick={downloadFinancialReport}
+                      className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Download Financial Report
+                    </button>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
           </Tabs>
 
           {role === "student" && studentData && (
